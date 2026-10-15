@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Scan output (photos can get big - commit selected samples on purpose)
+scans/
+captures/
+*.jpg
+*.png
+!docs/**/*.jpg
+!docs/**/*.png
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store

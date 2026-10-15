@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "orbiter-pantilt"
+version = "0.1.0"
+description = "Pan-tilt camera control for the crater-detection orbiter (Raspberry Pi 5 + PCA9685)"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = ["smbus2>=0.4"]
+
+[project.optional-dependencies]
+dev = ["pytest"]
+
+[project.scripts]
+pantilt = "pantilt.cli:main"
+
+[tool.setuptools]
+packages = ["pantilt"]

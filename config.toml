@@ -1,0 +1,31 @@
+# Pan-tilt settings. Edit and re-run - no code changes needed.
+# Defaults match the ArduCAM pan-tilt kit (tilt on channel 0, pan on channel 1).
+
+[driver]
+i2c_bus = 1              # I2C1 = header pins 3 (SDA) and 5 (SCL)
+address = 0x40           # PCA9685 default; confirm with `i2cdetect -y 1`
+frequency_hz = 50        # standard servo refresh rate
+oscillator_hz = 25000000 # PCA9685 internal clock; tweak only if pulse timing is off
+
+[pan]                    # left / right
+channel = 1
+min_angle = 0
+max_angle = 180
+center = 90
+min_pulse_us = 500       # pulse width at 0 degrees
+max_pulse_us = 2500      # pulse width at 180 degrees
+invert = false           # true flips left/right
+
+[tilt]                   # up / down
+channel = 0
+min_angle = 15           # mechanical limits of the bracket - keep these
+max_angle = 145
+center = 90
+min_pulse_us = 500
+max_pulse_us = 2500
+invert = false           # true flips up/down
+
+[motion]
+speed_dps = 60           # degrees per second for smooth moves
+step_deg = 1             # interpolation step
+settle_s = 0.3           # wait after a move before capturing (lets vibration die out)

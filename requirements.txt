@@ -1,0 +1,3 @@
+smbus2>=0.4
+# picamera2 (only for `pantilt scan --capture`) comes from apt, not pip:
+#   sudo apt install python3-picamera2
