@@ -79,6 +79,22 @@ the repo folder.
 The servos keep holding their position after a command exits. Run
 `pantilt off` to release them.
 
+### Finding the camera's bounds
+
+```bash
+python find_bounds.py
+```
+
+Drive the camera with the arrow keys over the full 0–180° range of each servo.
+The angle limits in `config.toml` are ignored here. The screen shows the live
+pan/tilt angles, the pulse width, and the range you've visited. Press **m** to
+mark a position (saved to `marks.csv`). When you quit with **q**, it prints
+your marks plus suggested `config.toml` limits and a matching `pantilt scan`
+command. Other keys: **+/-** step size, **c** center, **r** release.
+
+With no limits, the tilt bracket can hit its frame. If a servo buzzes or
+strains, back off or press **r**.
+
 ## Using it from Python (e.g. the crater-detection pipeline)
 
 ```python
@@ -138,6 +154,7 @@ pantilt/
   scan.py        raster (serpentine) scan pattern
   cli.py         `pantilt` command line
 config.toml      hardware settings
+find_bounds.py   free arrow-key control with live angles (no limits)
 tests/           hardware-free unit tests
 ```
 
