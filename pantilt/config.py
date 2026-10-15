@@ -42,6 +42,15 @@ class MotionConfig:
 
 
 @dataclass
+class CameraConfig:
+    rotate_180: bool = False     # camera mounted upside down
+    preview_width: int = 1280
+    preview_height: int = 720
+    preview_quality: int = 70    # JPEG quality for the live preview (1-100)
+    preview_port: int = 8000
+
+
+@dataclass
 class Config:
     driver: DriverConfig = field(default_factory=DriverConfig)
     pan: ServoConfig = field(default_factory=lambda: ServoConfig(channel=1))
@@ -49,6 +58,7 @@ class Config:
         default_factory=lambda: ServoConfig(channel=0, min_angle=15, max_angle=145)
     )
     motion: MotionConfig = field(default_factory=MotionConfig)
+    camera: CameraConfig = field(default_factory=CameraConfig)
 
 
 _SECTIONS = {
@@ -56,6 +66,7 @@ _SECTIONS = {
     "pan": ServoConfig,
     "tilt": ServoConfig,
     "motion": MotionConfig,
+    "camera": CameraConfig,
 }
 
 

@@ -149,8 +149,10 @@ def cmd_scan(args, cfg) -> int:
             return 1
         out = Path(args.capture)
         out.mkdir(parents=True, exist_ok=True)
+        from .stream import camera_transform
+
         cam = Picamera2()
-        cam.configure(cam.create_still_configuration())
+        cam.configure(cam.create_still_configuration(transform=camera_transform(cfg.camera)))
         cam.start()
         time.sleep(1)  # let auto-exposure settle
         manifest = (out / "poses.csv").open("w", newline="")

@@ -10,7 +10,13 @@ only the min/max angle limits are ignored.
 
 Run from the repo folder:
     python find_bounds.py
+    python find_bounds.py --preview          # + live camera in your browser
     python find_bounds.py --step 5 --start-pan 90 --start-tilt 90
+
+With --preview, open the printed address (http://<pi-ip>:8000/) in a browser
+on your Mac or the Pi. It shows the camera with a center crosshair and the live
+angles. The image is flipped 180 degrees when [camera] rotate_180 = true in
+config.toml.
 
 Keys:
     arrow keys   move (up/down = tilt, left/right = pan)
@@ -46,6 +52,18 @@ class Explorer:
         self.seen = {"pan": [None, None], "tilt": [None, None]}
         self.released = False
         self.msg = ""
+        self.preview_url: str | None = None
+
+    def status(self) -> dict:
+        """Live values shown on the browser preview."""
+        p, t = self.pt.position
+        return {
+            "pan": p,
+            "tilt": t,
+            "step": self.step,
+            "servos": "released" if self.released else "holding",
+            "marks": len(self.marks),
+        }
 
     @property
     def step(self) -> float:
@@ -124,6 +142,8 @@ class Explorer:
             "  arrows move   +/- step   m mark   c center   r release   q quit",
             "",
         ]
+        if self.preview_url:
+            out[1:1] = [f"  Live camera: {self.preview_url}", ""]
         for i, (mp, mt) in enumerate(self.marks[-8:], start=max(1, len(self.marks) - 7)):
             out.append(f"  mark {i}: pan={mp:.1f}  tilt={mt:.1f}")
         if self.msg:
@@ -186,6 +206,8 @@ def main(argv=None) -> int:
     ap.add_argument("--start-pan", type=float, help="starting pan angle (default: config center)")
     ap.add_argument("--start-tilt", type=float, help="starting tilt angle (default: config center)")
     ap.add_argument("--marks", default="marks.csv", help="file to save marks to ('' to disable)")
+    ap.add_argument("--preview", action="store_true", help="stream the live camera to a web page")
+    ap.add_argument("--port", type=int, help="web preview port (default: [camera] preview_port, 8000)")
     args = ap.parse_args(argv)
 
     cfg = load_config(args.config)
@@ -200,10 +222,32 @@ def main(argv=None) -> int:
         )
         explorer = Explorer(pt, args.step, Path(args.marks) if args.marks else None)
         explorer._track()
+
+        stream = None
+        if args.preview:
+            try:
+                from pantilt.stream import CameraStream
+
+                stream = CameraStream(cfg.camera, status=explorer.status, port=args.port)
+                explorer.preview_url = stream.start()
+            except ImportError:
+                print("picamera2 not found. Install it with `sudo apt install python3-picamera2`\n"
+                      "and make sure the venv was created with --system-site-packages.")
+                return 1
+            except (RuntimeError, OSError, IndexError) as e:  # IndexError = no camera found
+                if stream:
+                    stream.stop()
+                print(f"Couldn't start the camera preview: {e}\n"
+                      "Is the camera connected, and is another program (rpicam-hello, a scan) using it?")
+                return 1
+
         try:
             curses.wrapper(run, explorer)
         except KeyboardInterrupt:
             pass
+        finally:
+            if stream:
+                stream.stop()
         print(explorer.summary())
     return 0
 

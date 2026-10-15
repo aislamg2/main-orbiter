@@ -99,6 +99,36 @@ def test_load_config(tmp_path):
     assert cfg.tilt.invert and cfg.tilt.min_angle == 15   # untouched defaults kept
 
 
+def test_camera_config(tmp_path):
+    assert Config().camera.rotate_180 is False
+    f = tmp_path / "c.toml"
+    f.write_text("[camera]\nrotate_180 = true\npreview_port = 8080\n")
+    cam = load_config(f).camera
+    assert cam.rotate_180 and cam.preview_port == 8080 and cam.preview_width == 1280
+
+
+def test_preview_server_serves_page_status_and_frames():
+    import urllib.request
+
+    from pantilt.config import CameraConfig
+    from pantilt.stream import CameraStream
+
+    s = CameraStream(CameraConfig(), status=lambda: {"pan": 91.5}, port=0)
+    s._start_http()  # HTTP only; no camera needed
+    port = s.httpd.server_address[1]
+    try:
+        base = f"http://127.0.0.1:{port}"
+        assert b"stream.mjpg" in urllib.request.urlopen(base + "/").read()
+        assert urllib.request.urlopen(base + "/status.json").read() == b'{"pan": 91.5}'
+        s.frames.write(b"\xff\xd8fakejpeg\xff\xd9")
+        r = urllib.request.urlopen(base + "/stream.mjpg", timeout=3)
+        chunk = r.read(200)
+        assert b"--FRAME" in chunk and b"fakejpeg" in chunk
+        r.close()
+    finally:
+        s.stop()
+
+
 def test_load_config_rejects_typos(tmp_path):
     f = tmp_path / "c.toml"
     f.write_text("[pan]\nmax_angel = 170\n")

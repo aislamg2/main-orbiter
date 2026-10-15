@@ -95,6 +95,29 @@ command. Other keys: **+/-** step size, **c** center, **r** release.
 With no limits, the tilt bracket can hit its frame. If a servo buzzes or
 strains, back off or press **r**.
 
+**Live camera view:** add `--preview`:
+
+```bash
+python find_bounds.py --preview
+```
+
+The terminal shows an address like `http://192.168.1.42:8000/`. Open it in a
+browser on your Mac (same network) or on the Pi. You get the live camera with a
+center crosshair and the current pan/tilt angles drawn on top. Only one program
+can use the camera at a time, so close `rpicam-hello` or any running scan first.
+
+### Camera orientation
+
+The camera is mounted upside down, so `config.toml` has:
+
+```toml
+[camera]
+rotate_180 = true
+```
+
+This flips the live preview and the photos from `pantilt scan --capture`. For
+the `rpicam-*` tools, add `--rotation 180`, e.g. `rpicam-hello -t 0 --rotation 180`.
+
 ## Using it from Python (e.g. the crater-detection pipeline)
 
 ```python
@@ -143,6 +166,8 @@ pytest
 | `no PCA9685 at 0x40` | Check SDA (pin 3) / SCL (pin 5) / VCC / GND; run `i2cdetect -y 1` |
 | Command runs, servos don't move | No power on V+, or servo plug reversed (brown/black = GND) |
 | Pi reboots or Hailo disappears when servos move | Servo power is reaching the Pi's 5 V rail; use only the external V+ supply |
+| Preview page won't load from the Mac | Use the Pi's IP (`hostname -I`), same network, port 8000; campus networks can block device-to-device traffic, so try a phone hotspot or open it in the Pi's own browser |
+| `Couldn't start the camera preview` | Camera not detected (`rpicam-hello --list-cameras`) or another program is using it |
 
 ## Project layout
 
@@ -152,6 +177,7 @@ pantilt/
   controller.py  Servo + PanTilt: limits, smooth moves, center, release
   config.py      config.toml loading and defaults
   scan.py        raster (serpentine) scan pattern
+  stream.py      live camera preview as a web page (MJPEG)
   cli.py         `pantilt` command line
 config.toml      hardware settings
 find_bounds.py   free arrow-key control with live angles (no limits)
