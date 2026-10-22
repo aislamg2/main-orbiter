@@ -153,3 +153,158 @@
 [2026-10-21 13:15:19.032] [175676] [HailoRT] [info] [queue_elements.cpp:46] [~BaseQueueElement] Queue element PullQEl_hw_read12mars_model_float32/softmax1 has 0 frames in his Queue on destruction
 [2026-10-21 13:15:19.032] [175688] [HailoRT] [info] [queue_elements.cpp:68] [operator()] Thread in element UserBuffQEl12mars_model_float32/softmax1 is not running anymore, exiting..
 [2026-10-21 13:15:19.032] [175676] [HailoRT] [info] [queue_elements.cpp:46] [~BaseQueueElement] Queue element UserBuffQEl12mars_model_float32/softmax1 has 0 frames in his Queue on destruction
+[2026-10-21 23:50:17.075] [11336] [HailoRT] [info] [hef.cpp:1994] [get_network_group_and_network_name] No name was given. Addressing all networks of default network_group: mars_model_float32
+[2026-10-21 23:50:17.077] [11336] [HailoRT] [info] [hef.cpp:1994] [get_network_group_and_network_name] No name was given. Addressing all networks of default network_group: mars_model_float32
+[2026-10-21 23:50:17.100] [11336] [HailoRT] [info] [vdevice.cpp:535] [create] Creating vdevice with params: device_count: 1, scheduling_algorithm: NONE, multi_process_service: false
+[2026-10-21 23:50:17.119] [11336] [HailoRT] [info] [device.cpp:51] [Device] OS Version: Linux 6.18.50+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.18.50-1+rpt1 (2026-09-11) aarch64
+[2026-10-21 23:50:17.121] [11336] [HailoRT] [info] [control.cpp:113] [control__parse_identify_results] firmware_version is: 4.23.0
+[2026-10-21 23:50:17.121] [11336] [HailoRT] [info] [vdevice.cpp:682] [create] VDevice Infos: 0001:01:00.0
+[2026-10-21 23:50:17.131] [11336] [HailoRT] [info] [buffer_requirements.cpp:198] [find_initial_desc_page_size] Using non-default initial_desc_page_size of 64, due to a small transfer size (8)
+[2026-10-21 23:50:17.131] [11336] [HailoRT] [info] [internal_buffer_manager.cpp:75] [print_execution_results] Default Internal buffer planner failed to meet requirements
+[2026-10-21 23:50:17.131] [11336] [HailoRT] [info] [internal_buffer_manager.cpp:86] [print_execution_results] Default Internal buffer planner executed successfully
+[2026-10-21 23:50:17.139] [11336] [HailoRT] [info] [device_internal.cpp:57] [configure] Configuring HEF took 16.889301 milliseconds
+[2026-10-21 23:50:17.139] [11336] [HailoRT] [info] [vdevice.cpp:780] [configure] Configuring HEF on VDevice took 17.53041 milliseconds
+[2026-10-21 23:50:17.141] [11336] [HailoRT] [info] [edge_elements.cpp:52] [create] Created (HwWriteEl15mars_model_float32/input_layer1 | hw_frame_size: 150528)
+[2026-10-21 23:50:17.143] [11336] [HailoRT] [info] [vstream.cpp:754] [InputVStreamImpl] Creating mars_model_float32/input_layer1...
+[2026-10-21 23:50:17.143] [11336] [HailoRT] [info] [vstream_builder.cpp:102] [create_inputs] Input pipeline 'mars_model_float32/input_layer1': (HwWriteEl15mars_model_float32/input_layer1 | hw_frame_size: 150528) >> HW
+[2026-10-21 23:50:17.143] [11336] [HailoRT] [info] [edge_elements.cpp:287] [create] Created (HwReadEl12mars_model_float32/softmax1 | hw_frame_size: 8)
+[2026-10-21 23:50:17.144] [11336] [HailoRT] [info] [queue_elements.cpp:657] [create] Created (PullQEl_hw_read12mars_model_float32/softmax1)
+[2026-10-21 23:50:17.144] [11336] [HailoRT] [info] [filter_elements.cpp:372] [create] Created (PostInferEl12mars_model_float32/softmax1 | Quantization - src_type: UINT8, dst_type FLOAT32, limvals_min: 0, limvals_max: 1)
+[2026-10-21 23:50:17.145] [11336] [HailoRT] [info] [queue_elements.cpp:800] [create] Created (UserBuffQEl12mars_model_float32/softmax1 | timeout: 10s)
+[2026-10-21 23:50:17.145] [11336] [HailoRT] [info] [vstream.cpp:1114] [OutputVStreamImpl] Creating mars_model_float32/softmax1...
+[2026-10-21 23:50:17.145] [11336] [HailoRT] [info] [vstream_builder.cpp:220] [create_outputs] Output pipeline 'mars_model_float32/softmax1': HW >> (HwReadEl12mars_model_float32/softmax1 | hw_frame_size: 8) >> (PullQEl_hw_read12mars_model_float32/softmax1) >> (PostInferEl12mars_model_float32/softmax1 | Quantization - src_type: UINT8, dst_type FLOAT32, limvals_min: 0, limvals_max: 1) >> (UserBuffQEl12mars_model_float32/softmax1 | timeout: 10s)
+[2026-10-21 23:50:17.147] [11336] [HailoRT] [info] [core_op.cpp:156] [activate] Activating mars_model_float32 took 0.291388 milliseconds. Note that the function is asynchronous and thus the network is not fully activated yet.
+[2026-10-21 23:50:17.147] [11336] [HailoRT] [info] [core_op.cpp:156] [activate] Activating mars_model_float32 took 0.324165 milliseconds. Note that the function is asynchronous and thus the network is not fully activated yet.
+[2026-10-21 23:50:17.217] [11349] [HailoRT] [info] [vdevice_native_stream.cpp:331] [read_impl] Failed read from stream HAILO_STREAM_NOT_ACTIVATED(72) (device: 0001:01:00.0)
+[2026-10-21 23:50:17.217] [11336] [HailoRT] [info] [core_op.cpp:186] [deactivate] Deactivating took 0.488888 ms
+[2026-10-21 23:50:17.217] [11336] [HailoRT] [info] [core_op.cpp:186] [deactivate] Deactivating took 0.982571 ms
+[2026-10-21 23:50:17.218] [11349] [HailoRT] [info] [queue_elements.cpp:734] [run_in_thread] Shutdown event was signaled in run_pull of queue element PullQEl_hw_read12mars_model_float32/softmax1!
+[2026-10-21 23:50:17.218] [11350] [HailoRT] [info] [queue_elements.cpp:855] [run_in_thread] Shutdown event was signaled in dequeue of UserBuffQEl12mars_model_float32/softmax1!
+[2026-10-21 23:50:17.218] [11349] [HailoRT] [info] [queue_elements.cpp:68] [operator()] Thread in element PullQEl_hw_read12mars_model_float32/softmax1 is not running anymore, exiting..
+[2026-10-21 23:50:17.218] [11336] [HailoRT] [info] [queue_elements.cpp:46] [~BaseQueueElement] Queue element PullQEl_hw_read12mars_model_float32/softmax1 has 0 frames in his Queue on destruction
+[2026-10-21 23:50:17.218] [11350] [HailoRT] [info] [queue_elements.cpp:68] [operator()] Thread in element UserBuffQEl12mars_model_float32/softmax1 is not running anymore, exiting..
+[2026-10-21 23:50:17.218] [11336] [HailoRT] [info] [queue_elements.cpp:46] [~BaseQueueElement] Queue element UserBuffQEl12mars_model_float32/softmax1 has 0 frames in his Queue on destruction
+[2026-10-21 23:51:58.380] [11795] [HailoRT] [info] [hef.cpp:1994] [get_network_group_and_network_name] No name was given. Addressing all networks of default network_group: mars_model_float32
+[2026-10-21 23:51:58.380] [11795] [HailoRT] [info] [hef.cpp:1994] [get_network_group_and_network_name] No name was given. Addressing all networks of default network_group: mars_model_float32
+[2026-10-21 23:51:58.407] [11795] [HailoRT] [info] [vdevice.cpp:535] [create] Creating vdevice with params: device_count: 1, scheduling_algorithm: NONE, multi_process_service: false
+[2026-10-21 23:51:58.419] [11795] [HailoRT] [info] [device.cpp:51] [Device] OS Version: Linux 6.18.50+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.18.50-1+rpt1 (2026-09-11) aarch64
+[2026-10-21 23:51:58.419] [11795] [HailoRT] [info] [control.cpp:113] [control__parse_identify_results] firmware_version is: 4.23.0
+[2026-10-21 23:51:58.419] [11795] [HailoRT] [info] [vdevice.cpp:682] [create] VDevice Infos: 0001:01:00.0
+[2026-10-21 23:51:58.425] [11795] [HailoRT] [info] [buffer_requirements.cpp:198] [find_initial_desc_page_size] Using non-default initial_desc_page_size of 64, due to a small transfer size (8)
+[2026-10-21 23:51:58.425] [11795] [HailoRT] [info] [internal_buffer_manager.cpp:75] [print_execution_results] Default Internal buffer planner failed to meet requirements
+[2026-10-21 23:51:58.425] [11795] [HailoRT] [info] [internal_buffer_manager.cpp:86] [print_execution_results] Default Internal buffer planner executed successfully
+[2026-10-21 23:51:58.432] [11795] [HailoRT] [info] [device_internal.cpp:57] [configure] Configuring HEF took 13.039696 milliseconds
+[2026-10-21 23:51:58.432] [11795] [HailoRT] [info] [vdevice.cpp:780] [configure] Configuring HEF on VDevice took 13.303528 milliseconds
+[2026-10-21 23:51:58.433] [11795] [HailoRT] [info] [edge_elements.cpp:52] [create] Created (HwWriteEl15mars_model_float32/input_layer1 | hw_frame_size: 150528)
+[2026-10-21 23:51:58.433] [11795] [HailoRT] [info] [vstream.cpp:754] [InputVStreamImpl] Creating mars_model_float32/input_layer1...
+[2026-10-21 23:51:58.433] [11795] [HailoRT] [info] [vstream_builder.cpp:102] [create_inputs] Input pipeline 'mars_model_float32/input_layer1': (HwWriteEl15mars_model_float32/input_layer1 | hw_frame_size: 150528) >> HW
+[2026-10-21 23:51:58.433] [11795] [HailoRT] [info] [edge_elements.cpp:287] [create] Created (HwReadEl12mars_model_float32/softmax1 | hw_frame_size: 8)
+[2026-10-21 23:51:58.433] [11795] [HailoRT] [info] [queue_elements.cpp:657] [create] Created (PullQEl_hw_read12mars_model_float32/softmax1)
+[2026-10-21 23:51:58.433] [11795] [HailoRT] [info] [filter_elements.cpp:372] [create] Created (PostInferEl12mars_model_float32/softmax1 | Quantization - src_type: UINT8, dst_type FLOAT32, limvals_min: 0, limvals_max: 1)
+[2026-10-21 23:51:58.433] [11795] [HailoRT] [info] [queue_elements.cpp:800] [create] Created (UserBuffQEl12mars_model_float32/softmax1 | timeout: 10s)
+[2026-10-21 23:51:58.433] [11795] [HailoRT] [info] [vstream.cpp:1114] [OutputVStreamImpl] Creating mars_model_float32/softmax1...
+[2026-10-21 23:51:58.433] [11795] [HailoRT] [info] [vstream_builder.cpp:220] [create_outputs] Output pipeline 'mars_model_float32/softmax1': HW >> (HwReadEl12mars_model_float32/softmax1 | hw_frame_size: 8) >> (PullQEl_hw_read12mars_model_float32/softmax1) >> (PostInferEl12mars_model_float32/softmax1 | Quantization - src_type: UINT8, dst_type FLOAT32, limvals_min: 0, limvals_max: 1) >> (UserBuffQEl12mars_model_float32/softmax1 | timeout: 10s)
+[2026-10-21 23:51:58.433] [11795] [HailoRT] [info] [core_op.cpp:156] [activate] Activating mars_model_float32 took 0.23098 milliseconds. Note that the function is asynchronous and thus the network is not fully activated yet.
+[2026-10-21 23:51:58.433] [11795] [HailoRT] [info] [core_op.cpp:156] [activate] Activating mars_model_float32 took 0.241795 milliseconds. Note that the function is asynchronous and thus the network is not fully activated yet.
+[2026-10-22 00:04:33.562] [11806] [HailoRT] [info] [vdevice_native_stream.cpp:331] [read_impl] Failed read from stream HAILO_STREAM_NOT_ACTIVATED(72) (device: 0001:01:00.0)
+[2026-10-22 00:04:33.562] [11795] [HailoRT] [info] [core_op.cpp:186] [deactivate] Deactivating took 0.423488 ms
+[2026-10-22 00:04:33.562] [11795] [HailoRT] [info] [core_op.cpp:186] [deactivate] Deactivating took 0.447636 ms
+[2026-10-22 00:04:33.562] [11806] [HailoRT] [info] [queue_elements.cpp:734] [run_in_thread] Shutdown event was signaled in run_pull of queue element PullQEl_hw_read12mars_model_float32/softmax1!
+[2026-10-22 00:04:33.562] [11807] [HailoRT] [info] [queue_elements.cpp:855] [run_in_thread] Shutdown event was signaled in dequeue of UserBuffQEl12mars_model_float32/softmax1!
+[2026-10-22 00:04:33.562] [11806] [HailoRT] [info] [queue_elements.cpp:68] [operator()] Thread in element PullQEl_hw_read12mars_model_float32/softmax1 is not running anymore, exiting..
+[2026-10-22 00:04:33.562] [11795] [HailoRT] [info] [queue_elements.cpp:46] [~BaseQueueElement] Queue element PullQEl_hw_read12mars_model_float32/softmax1 has 0 frames in his Queue on destruction
+[2026-10-22 00:04:33.562] [11807] [HailoRT] [info] [queue_elements.cpp:68] [operator()] Thread in element UserBuffQEl12mars_model_float32/softmax1 is not running anymore, exiting..
+[2026-10-22 00:04:33.562] [11795] [HailoRT] [info] [queue_elements.cpp:46] [~BaseQueueElement] Queue element UserBuffQEl12mars_model_float32/softmax1 has 0 frames in his Queue on destruction
+[2026-10-22 00:06:23.048] [37666] [HailoRT] [info] [hef.cpp:1994] [get_network_group_and_network_name] No name was given. Addressing all networks of default network_group: mars_model_float32
+[2026-10-22 00:06:23.048] [37666] [HailoRT] [info] [hef.cpp:1994] [get_network_group_and_network_name] No name was given. Addressing all networks of default network_group: mars_model_float32
+[2026-10-22 00:06:23.073] [37666] [HailoRT] [info] [vdevice.cpp:535] [create] Creating vdevice with params: device_count: 1, scheduling_algorithm: NONE, multi_process_service: false
+[2026-10-22 00:06:23.085] [37666] [HailoRT] [info] [device.cpp:51] [Device] OS Version: Linux 6.18.50+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.18.50-1+rpt1 (2026-09-11) aarch64
+[2026-10-22 00:06:23.085] [37666] [HailoRT] [info] [control.cpp:113] [control__parse_identify_results] firmware_version is: 4.23.0
+[2026-10-22 00:06:23.085] [37666] [HailoRT] [info] [vdevice.cpp:682] [create] VDevice Infos: 0001:01:00.0
+[2026-10-22 00:06:23.091] [37666] [HailoRT] [info] [buffer_requirements.cpp:198] [find_initial_desc_page_size] Using non-default initial_desc_page_size of 64, due to a small transfer size (8)
+[2026-10-22 00:06:23.091] [37666] [HailoRT] [info] [internal_buffer_manager.cpp:75] [print_execution_results] Default Internal buffer planner failed to meet requirements
+[2026-10-22 00:06:23.091] [37666] [HailoRT] [info] [internal_buffer_manager.cpp:86] [print_execution_results] Default Internal buffer planner executed successfully
+[2026-10-22 00:06:23.100] [37666] [HailoRT] [info] [device_internal.cpp:57] [configure] Configuring HEF took 14.317799 milliseconds
+[2026-10-22 00:06:23.100] [37666] [HailoRT] [info] [vdevice.cpp:780] [configure] Configuring HEF on VDevice took 14.607598 milliseconds
+[2026-10-22 00:06:23.100] [37666] [HailoRT] [info] [edge_elements.cpp:52] [create] Created (HwWriteEl15mars_model_float32/input_layer1 | hw_frame_size: 150528)
+[2026-10-22 00:06:23.100] [37666] [HailoRT] [info] [vstream.cpp:754] [InputVStreamImpl] Creating mars_model_float32/input_layer1...
+[2026-10-22 00:06:23.100] [37666] [HailoRT] [info] [vstream_builder.cpp:102] [create_inputs] Input pipeline 'mars_model_float32/input_layer1': (HwWriteEl15mars_model_float32/input_layer1 | hw_frame_size: 150528) >> HW
+[2026-10-22 00:06:23.100] [37666] [HailoRT] [info] [edge_elements.cpp:287] [create] Created (HwReadEl12mars_model_float32/softmax1 | hw_frame_size: 8)
+[2026-10-22 00:06:23.101] [37666] [HailoRT] [info] [queue_elements.cpp:657] [create] Created (PullQEl_hw_read12mars_model_float32/softmax1)
+[2026-10-22 00:06:23.101] [37666] [HailoRT] [info] [filter_elements.cpp:372] [create] Created (PostInferEl12mars_model_float32/softmax1 | Quantization - src_type: UINT8, dst_type FLOAT32, limvals_min: 0, limvals_max: 1)
+[2026-10-22 00:06:23.102] [37666] [HailoRT] [info] [queue_elements.cpp:800] [create] Created (UserBuffQEl12mars_model_float32/softmax1 | timeout: 10s)
+[2026-10-22 00:06:23.102] [37666] [HailoRT] [info] [vstream.cpp:1114] [OutputVStreamImpl] Creating mars_model_float32/softmax1...
+[2026-10-22 00:06:23.102] [37666] [HailoRT] [info] [vstream_builder.cpp:220] [create_outputs] Output pipeline 'mars_model_float32/softmax1': HW >> (HwReadEl12mars_model_float32/softmax1 | hw_frame_size: 8) >> (PullQEl_hw_read12mars_model_float32/softmax1) >> (PostInferEl12mars_model_float32/softmax1 | Quantization - src_type: UINT8, dst_type FLOAT32, limvals_min: 0, limvals_max: 1) >> (UserBuffQEl12mars_model_float32/softmax1 | timeout: 10s)
+[2026-10-22 00:06:23.103] [37666] [HailoRT] [info] [core_op.cpp:156] [activate] Activating mars_model_float32 took 0.22928 milliseconds. Note that the function is asynchronous and thus the network is not fully activated yet.
+[2026-10-22 00:06:23.103] [37666] [HailoRT] [info] [core_op.cpp:156] [activate] Activating mars_model_float32 took 0.246873 milliseconds. Note that the function is asynchronous and thus the network is not fully activated yet.
+[2026-10-22 00:11:53.974] [37678] [HailoRT] [info] [vdevice_native_stream.cpp:331] [read_impl] Failed read from stream HAILO_STREAM_NOT_ACTIVATED(72) (device: 0001:01:00.0)
+[2026-10-22 00:11:53.974] [37666] [HailoRT] [info] [core_op.cpp:186] [deactivate] Deactivating took 0.531466 ms
+[2026-10-22 00:11:53.974] [37666] [HailoRT] [info] [core_op.cpp:186] [deactivate] Deactivating took 0.566725 ms
+[2026-10-22 00:11:53.974] [37678] [HailoRT] [info] [queue_elements.cpp:734] [run_in_thread] Shutdown event was signaled in run_pull of queue element PullQEl_hw_read12mars_model_float32/softmax1!
+[2026-10-22 00:11:53.974] [37679] [HailoRT] [info] [queue_elements.cpp:855] [run_in_thread] Shutdown event was signaled in dequeue of UserBuffQEl12mars_model_float32/softmax1!
+[2026-10-22 00:11:53.974] [37678] [HailoRT] [info] [queue_elements.cpp:68] [operator()] Thread in element PullQEl_hw_read12mars_model_float32/softmax1 is not running anymore, exiting..
+[2026-10-22 00:11:53.974] [37666] [HailoRT] [info] [queue_elements.cpp:46] [~BaseQueueElement] Queue element PullQEl_hw_read12mars_model_float32/softmax1 has 0 frames in his Queue on destruction
+[2026-10-22 00:11:53.974] [37679] [HailoRT] [info] [queue_elements.cpp:68] [operator()] Thread in element UserBuffQEl12mars_model_float32/softmax1 is not running anymore, exiting..
+[2026-10-22 00:11:53.974] [37666] [HailoRT] [info] [queue_elements.cpp:46] [~BaseQueueElement] Queue element UserBuffQEl12mars_model_float32/softmax1 has 0 frames in his Queue on destruction
+[2026-10-22 00:12:02.461] [50835] [HailoRT] [info] [hef.cpp:1994] [get_network_group_and_network_name] No name was given. Addressing all networks of default network_group: mars_model_float32
+[2026-10-22 00:12:02.461] [50835] [HailoRT] [info] [hef.cpp:1994] [get_network_group_and_network_name] No name was given. Addressing all networks of default network_group: mars_model_float32
+[2026-10-22 00:12:02.487] [50835] [HailoRT] [info] [vdevice.cpp:535] [create] Creating vdevice with params: device_count: 1, scheduling_algorithm: NONE, multi_process_service: false
+[2026-10-22 00:12:02.499] [50835] [HailoRT] [info] [device.cpp:51] [Device] OS Version: Linux 6.18.50+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.18.50-1+rpt1 (2026-09-11) aarch64
+[2026-10-22 00:12:02.499] [50835] [HailoRT] [info] [control.cpp:113] [control__parse_identify_results] firmware_version is: 4.23.0
+[2026-10-22 00:12:02.499] [50835] [HailoRT] [info] [vdevice.cpp:682] [create] VDevice Infos: 0001:01:00.0
+[2026-10-22 00:12:02.504] [50835] [HailoRT] [info] [buffer_requirements.cpp:198] [find_initial_desc_page_size] Using non-default initial_desc_page_size of 64, due to a small transfer size (8)
+[2026-10-22 00:12:02.504] [50835] [HailoRT] [info] [internal_buffer_manager.cpp:75] [print_execution_results] Default Internal buffer planner failed to meet requirements
+[2026-10-22 00:12:02.504] [50835] [HailoRT] [info] [internal_buffer_manager.cpp:86] [print_execution_results] Default Internal buffer planner executed successfully
+[2026-10-22 00:12:02.513] [50835] [HailoRT] [info] [device_internal.cpp:57] [configure] Configuring HEF took 13.466365 milliseconds
+[2026-10-22 00:12:02.513] [50835] [HailoRT] [info] [vdevice.cpp:780] [configure] Configuring HEF on VDevice took 13.72207 milliseconds
+[2026-10-22 00:12:02.513] [50835] [HailoRT] [info] [edge_elements.cpp:52] [create] Created (HwWriteEl15mars_model_float32/input_layer1 | hw_frame_size: 150528)
+[2026-10-22 00:12:02.513] [50835] [HailoRT] [info] [vstream.cpp:754] [InputVStreamImpl] Creating mars_model_float32/input_layer1...
+[2026-10-22 00:12:02.513] [50835] [HailoRT] [info] [vstream_builder.cpp:102] [create_inputs] Input pipeline 'mars_model_float32/input_layer1': (HwWriteEl15mars_model_float32/input_layer1 | hw_frame_size: 150528) >> HW
+[2026-10-22 00:12:02.513] [50835] [HailoRT] [info] [edge_elements.cpp:287] [create] Created (HwReadEl12mars_model_float32/softmax1 | hw_frame_size: 8)
+[2026-10-22 00:12:02.513] [50835] [HailoRT] [info] [queue_elements.cpp:657] [create] Created (PullQEl_hw_read12mars_model_float32/softmax1)
+[2026-10-22 00:12:02.513] [50835] [HailoRT] [info] [filter_elements.cpp:372] [create] Created (PostInferEl12mars_model_float32/softmax1 | Quantization - src_type: UINT8, dst_type FLOAT32, limvals_min: 0, limvals_max: 1)
+[2026-10-22 00:12:02.513] [50835] [HailoRT] [info] [queue_elements.cpp:800] [create] Created (UserBuffQEl12mars_model_float32/softmax1 | timeout: 10s)
+[2026-10-22 00:12:02.513] [50835] [HailoRT] [info] [vstream.cpp:1114] [OutputVStreamImpl] Creating mars_model_float32/softmax1...
+[2026-10-22 00:12:02.513] [50835] [HailoRT] [info] [vstream_builder.cpp:220] [create_outputs] Output pipeline 'mars_model_float32/softmax1': HW >> (HwReadEl12mars_model_float32/softmax1 | hw_frame_size: 8) >> (PullQEl_hw_read12mars_model_float32/softmax1) >> (PostInferEl12mars_model_float32/softmax1 | Quantization - src_type: UINT8, dst_type FLOAT32, limvals_min: 0, limvals_max: 1) >> (UserBuffQEl12mars_model_float32/softmax1 | timeout: 10s)
+[2026-10-22 00:12:02.514] [50835] [HailoRT] [info] [core_op.cpp:156] [activate] Activating mars_model_float32 took 0.204223 milliseconds. Note that the function is asynchronous and thus the network is not fully activated yet.
+[2026-10-22 00:12:02.514] [50835] [HailoRT] [info] [core_op.cpp:156] [activate] Activating mars_model_float32 took 0.214779 milliseconds. Note that the function is asynchronous and thus the network is not fully activated yet.
+[2026-10-22 00:12:07.325] [50846] [HailoRT] [info] [vdevice_native_stream.cpp:331] [read_impl] Failed read from stream HAILO_STREAM_NOT_ACTIVATED(72) (device: 0001:01:00.0)
+[2026-10-22 00:12:07.325] [50835] [HailoRT] [info] [core_op.cpp:186] [deactivate] Deactivating took 0.408521 ms
+[2026-10-22 00:12:07.325] [50835] [HailoRT] [info] [core_op.cpp:186] [deactivate] Deactivating took 0.428947 ms
+[2026-10-22 00:12:07.325] [50846] [HailoRT] [info] [queue_elements.cpp:734] [run_in_thread] Shutdown event was signaled in run_pull of queue element PullQEl_hw_read12mars_model_float32/softmax1!
+[2026-10-22 00:12:07.325] [50847] [HailoRT] [info] [queue_elements.cpp:855] [run_in_thread] Shutdown event was signaled in dequeue of UserBuffQEl12mars_model_float32/softmax1!
+[2026-10-22 00:12:07.325] [50846] [HailoRT] [info] [queue_elements.cpp:68] [operator()] Thread in element PullQEl_hw_read12mars_model_float32/softmax1 is not running anymore, exiting..
+[2026-10-22 00:12:07.325] [50835] [HailoRT] [info] [queue_elements.cpp:46] [~BaseQueueElement] Queue element PullQEl_hw_read12mars_model_float32/softmax1 has 0 frames in his Queue on destruction
+[2026-10-22 00:12:07.325] [50847] [HailoRT] [info] [queue_elements.cpp:68] [operator()] Thread in element UserBuffQEl12mars_model_float32/softmax1 is not running anymore, exiting..
+[2026-10-22 00:12:07.325] [50835] [HailoRT] [info] [queue_elements.cpp:46] [~BaseQueueElement] Queue element UserBuffQEl12mars_model_float32/softmax1 has 0 frames in his Queue on destruction
+[2026-10-22 00:20:27.282] [51181] [HailoRT] [info] [hef.cpp:1994] [get_network_group_and_network_name] No name was given. Addressing all networks of default network_group: mars_model_float32
+[2026-10-22 00:20:27.282] [51181] [HailoRT] [info] [hef.cpp:1994] [get_network_group_and_network_name] No name was given. Addressing all networks of default network_group: mars_model_float32
+[2026-10-22 00:20:27.305] [51181] [HailoRT] [info] [vdevice.cpp:535] [create] Creating vdevice with params: device_count: 1, scheduling_algorithm: NONE, multi_process_service: false
+[2026-10-22 00:20:27.318] [51181] [HailoRT] [info] [device.cpp:51] [Device] OS Version: Linux 6.18.50+rpt-rpi-2712 #1 SMP PREEMPT Debian 1:6.18.50-1+rpt1 (2026-09-11) aarch64
+[2026-10-22 00:20:27.318] [51181] [HailoRT] [info] [control.cpp:113] [control__parse_identify_results] firmware_version is: 4.23.0
+[2026-10-22 00:20:27.318] [51181] [HailoRT] [info] [vdevice.cpp:682] [create] VDevice Infos: 0001:01:00.0
+[2026-10-22 00:20:27.324] [51181] [HailoRT] [info] [buffer_requirements.cpp:198] [find_initial_desc_page_size] Using non-default initial_desc_page_size of 64, due to a small transfer size (8)
+[2026-10-22 00:20:27.326] [51181] [HailoRT] [info] [internal_buffer_manager.cpp:75] [print_execution_results] Default Internal buffer planner failed to meet requirements
+[2026-10-22 00:20:27.326] [51181] [HailoRT] [info] [internal_buffer_manager.cpp:86] [print_execution_results] Default Internal buffer planner executed successfully
+[2026-10-22 00:20:27.338] [51181] [HailoRT] [info] [device_internal.cpp:57] [configure] Configuring HEF took 19.744698 milliseconds
+[2026-10-22 00:20:27.338] [51181] [HailoRT] [info] [vdevice.cpp:780] [configure] Configuring HEF on VDevice took 20.043957 milliseconds
+[2026-10-22 00:20:27.339] [51181] [HailoRT] [info] [edge_elements.cpp:52] [create] Created (HwWriteEl15mars_model_float32/input_layer1 | hw_frame_size: 150528)
+[2026-10-22 00:20:27.339] [51181] [HailoRT] [info] [vstream.cpp:754] [InputVStreamImpl] Creating mars_model_float32/input_layer1...
+[2026-10-22 00:20:27.339] [51181] [HailoRT] [info] [vstream_builder.cpp:102] [create_inputs] Input pipeline 'mars_model_float32/input_layer1': (HwWriteEl15mars_model_float32/input_layer1 | hw_frame_size: 150528) >> HW
+[2026-10-22 00:20:27.339] [51181] [HailoRT] [info] [edge_elements.cpp:287] [create] Created (HwReadEl12mars_model_float32/softmax1 | hw_frame_size: 8)
+[2026-10-22 00:20:27.339] [51181] [HailoRT] [info] [queue_elements.cpp:657] [create] Created (PullQEl_hw_read12mars_model_float32/softmax1)
+[2026-10-22 00:20:27.339] [51181] [HailoRT] [info] [filter_elements.cpp:372] [create] Created (PostInferEl12mars_model_float32/softmax1 | Quantization - src_type: UINT8, dst_type FLOAT32, limvals_min: 0, limvals_max: 1)
+[2026-10-22 00:20:27.342] [51181] [HailoRT] [info] [queue_elements.cpp:800] [create] Created (UserBuffQEl12mars_model_float32/softmax1 | timeout: 10s)
+[2026-10-22 00:20:27.343] [51181] [HailoRT] [info] [vstream.cpp:1114] [OutputVStreamImpl] Creating mars_model_float32/softmax1...
+[2026-10-22 00:20:27.343] [51181] [HailoRT] [info] [vstream_builder.cpp:220] [create_outputs] Output pipeline 'mars_model_float32/softmax1': HW >> (HwReadEl12mars_model_float32/softmax1 | hw_frame_size: 8) >> (PullQEl_hw_read12mars_model_float32/softmax1) >> (PostInferEl12mars_model_float32/softmax1 | Quantization - src_type: UINT8, dst_type FLOAT32, limvals_min: 0, limvals_max: 1) >> (UserBuffQEl12mars_model_float32/softmax1 | timeout: 10s)
+[2026-10-22 00:20:27.343] [51181] [HailoRT] [info] [core_op.cpp:156] [activate] Activating mars_model_float32 took 0.219463 milliseconds. Note that the function is asynchronous and thus the network is not fully activated yet.
+[2026-10-22 00:20:27.343] [51181] [HailoRT] [info] [core_op.cpp:156] [activate] Activating mars_model_float32 took 0.238167 milliseconds. Note that the function is asynchronous and thus the network is not fully activated yet.
+[2026-10-22 00:29:28.453] [51191] [HailoRT] [info] [vdevice_native_stream.cpp:331] [read_impl] Failed read from stream HAILO_STREAM_NOT_ACTIVATED(72) (device: 0001:01:00.0)
+[2026-10-22 00:29:28.453] [51181] [HailoRT] [info] [core_op.cpp:186] [deactivate] Deactivating took 0.391333 ms
+[2026-10-22 00:29:28.453] [51181] [HailoRT] [info] [core_op.cpp:186] [deactivate] Deactivating took 0.40924 ms
+[2026-10-22 00:29:28.453] [51191] [HailoRT] [info] [queue_elements.cpp:734] [run_in_thread] Shutdown event was signaled in run_pull of queue element PullQEl_hw_read12mars_model_float32/softmax1!
+[2026-10-22 00:29:28.453] [51192] [HailoRT] [info] [queue_elements.cpp:855] [run_in_thread] Shutdown event was signaled in dequeue of UserBuffQEl12mars_model_float32/softmax1!
+[2026-10-22 00:29:28.454] [51191] [HailoRT] [info] [queue_elements.cpp:68] [operator()] Thread in element PullQEl_hw_read12mars_model_float32/softmax1 is not running anymore, exiting..
+[2026-10-22 00:29:28.454] [51181] [HailoRT] [info] [queue_elements.cpp:46] [~BaseQueueElement] Queue element PullQEl_hw_read12mars_model_float32/softmax1 has 0 frames in his Queue on destruction
+[2026-10-22 00:29:28.454] [51192] [HailoRT] [info] [queue_elements.cpp:68] [operator()] Thread in element UserBuffQEl12mars_model_float32/softmax1 is not running anymore, exiting..
+[2026-10-22 00:29:28.454] [51181] [HailoRT] [info] [queue_elements.cpp:46] [~BaseQueueElement] Queue element UserBuffQEl12mars_model_float32/softmax1 has 0 frames in his Queue on destruction

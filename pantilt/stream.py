@@ -15,6 +15,8 @@ from socketserver import ThreadingMixIn
 
 from .config import CameraConfig
 
+FULL_ARRAY = (4608, 2592)  # IMX708 full frame - keeps the preview's field of view equal to a still's
+
 PAGE = """<!doctype html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Orbiter camera</title>
@@ -28,18 +30,38 @@ PAGE = """<!doctype html>
   .cross::before, .cross::after { content:""; position:absolute; background:rgba(0,255,120,.7); }
   .cross::before { left:50%; top:calc(50% - 15px); width:1px; height:30px; }
   .cross::after  { top:50%; left:calc(50% - 15px); height:1px; width:30px; }
+  .modelbox { position:absolute; left:50%; top:50%; transform:translate(-50%,-50%);
+              box-sizing:border-box; border:2px solid rgba(255,70,70,.95);
+              width:0; height:0; }
+  .thumbwrap { position:absolute; left:10px; bottom:10px; background:rgba(0,0,0,.6);
+               padding:6px; border-radius:6px; text-align:center; }
+  .thumbwrap img { width:224px; height:224px; image-rendering:pixelated;
+                   border:1px solid rgba(255,70,70,.95); display:block; }
+  .thumbwrap span { font:11px ui-monospace,Menlo,monospace; color:#ffb347; }
 </style></head>
-<body><div class="wrap cross"><img src="/stream.mjpg" alt="camera"><div class="hud" id="hud">connecting...</div></div>
+<body><div class="wrap cross"><img src="/stream.mjpg" alt="camera"><div class="modelbox" id="modelbox"></div><div class="thumbwrap"><img id="thumb" alt=""><span>model input 224x224</span></div><div class="hud" id="hud">connecting...</div></div>
 <script>
+const camImg = document.querySelector('.wrap img');
+const boxEl = document.getElementById('modelbox');
+const thumbEl = document.getElementById('thumb');
+thumbEl.onerror = () => {};
+function sizeBox(crop) {
+  if (!crop || !camImg.clientWidth) return;
+  boxEl.style.height = (crop * 100) + '%';
+  boxEl.style.width = (crop * 100 * camImg.clientHeight / camImg.clientWidth) + '%';
+}
 async function tick() {
   try {
     const s = await (await fetch('/status.json', {cache: 'no-store'})).json();
+    if (s.crop !== undefined) sizeBox(parseFloat(s.crop));
     const lines = Object.entries(s).map(([k, v]) =>
       k.padEnd(6) + ' ' + (typeof v === 'number' ? v.toFixed(1) : v));
     document.getElementById('hud').textContent = lines.join('\\n');
   } catch (e) { document.getElementById('hud').textContent = 'status unavailable'; }
 }
+function refreshThumb() { thumbEl.src = '/crop.jpg?' + Date.now(); }
 setInterval(tick, 150); tick();
+setInterval(refreshThumb, 300); refreshThumb();
 </script></body></html>
 """
 
@@ -81,10 +103,13 @@ def camera_transform(cam: CameraConfig):
 
 
 class CameraStream:
-    def __init__(self, cam: CameraConfig, status=None, port: int | None = None):
+    def __init__(self, cam: CameraConfig, status=None, port: int | None = None,
+                 thumb=None):
         self.cam = cam
         self.port = port or cam.preview_port
         self.status = status or (lambda: {})
+        # Returns JPEG bytes of the current model input, or None.
+        self.thumb = thumb or (lambda: None)
         self.frames = _Frames()
         self.picam2 = None
         self.httpd = None
@@ -107,6 +132,7 @@ class CameraStream:
         self.picam2 = Picamera2()
         config = self.picam2.create_video_configuration(
             main={"size": (self.cam.preview_width, self.cam.preview_height)},
+            raw={"size": FULL_ARRAY},
             transform=camera_transform(self.cam),
         )
         self.picam2.configure(config)
@@ -155,6 +181,13 @@ def _make_handler(stream: CameraStream):
                 self._send(PAGE.encode(), "text/html; charset=utf-8")
             elif path == "/status.json":
                 self._send(json.dumps(stream.status()).encode(), "application/json")
+            elif path == "/crop.jpg":
+                body = stream.thumb()
+                if body:
+                    self._send(body, "image/jpeg")
+                else:
+                    self.send_response(204)
+                    self.end_headers()
             elif path == "/stream.mjpg":
                 self.send_response(200)
                 self.send_header("Cache-Control", "no-cache, private")

@@ -7,6 +7,7 @@ import csv
 import shutil
 import subprocess
 import sys
+import threading
 import time
 from pathlib import Path
 
@@ -185,12 +186,12 @@ def cmd_scan(args, cfg) -> int:
 class _Camera:
     """The camera, with or without the browser preview. grab() returns the newest frame."""
 
-    def __init__(self, cfg, preview: bool, port: int | None, status):
+    def __init__(self, cfg, preview: bool, port: int | None, status, thumb=None):
         self.stream = self.picam2 = None
         if preview:
             from .stream import CameraStream
 
-            self.stream = CameraStream(cfg.camera, status=status, port=port)
+            self.stream = CameraStream(cfg.camera, status=status, port=port, thumb=thumb)
             self.url = self.stream.start()
             self.cam = self.stream.picam2
         else:
@@ -199,8 +200,11 @@ class _Camera:
             from .stream import camera_transform
 
             self.picam2 = Picamera2()
+            from .stream import FULL_ARRAY
+
             self.picam2.configure(self.picam2.create_video_configuration(
                 main={"size": (cfg.camera.preview_width, cfg.camera.preview_height)},
+                raw={"size": FULL_ARRAY},
                 transform=camera_transform(cfg.camera),
             ))
             self.picam2.start()
@@ -220,7 +224,7 @@ class _Camera:
 
 def cmd_live(args, cfg) -> int:
     """Real-time landmark classification on the Hailo-8, with pan-tilt control."""
-    from .classify import HailoClassifier, LiveClassifier
+    from .classify import HailoClassifier, LiveClassifier, preprocess
 
     m = cfg.model
     hef = Path(args.hef or m.hef_path)
@@ -238,9 +242,42 @@ def cmd_live(args, cfg) -> int:
 
     crop = args.crop if args.crop is not None else m.crop
     pt_ref: dict = {}
+    cam_ref: dict = {}
+    _thumb_cache: dict = {"at": 0.0, "jpg": None}
+    _thumb_lock = threading.Lock()
+
+    def thumb():
+        """JPEG of the exact array handed to the Hailo, at most 4 per second.
+
+        Cached behind a lock so a browser polling the endpoint cannot stack up
+        camera grabs on the capture loop.
+        """
+        import io
+
+        now = time.time()
+        if now - _thumb_cache["at"] < 0.25:
+            return _thumb_cache["jpg"]
+        with _thumb_lock:
+            if time.time() - _thumb_cache["at"] < 0.25:
+                return _thumb_cache["jpg"]
+            cam = cam_ref.get("camera")
+            if cam is None:
+                return None
+            try:
+                from PIL import Image
+
+                arr = preprocess(cam.grab(), crop=crop)[0]
+                buf = io.BytesIO()
+                Image.fromarray(arr).save(buf, format="JPEG", quality=85)
+                _thumb_cache["jpg"] = buf.getvalue()
+            except Exception:
+                _thumb_cache["jpg"] = None
+            _thumb_cache["at"] = time.time()
+            return _thumb_cache["jpg"]
 
     def status():
         d = dict(live.status()) if live else {}
+        d["crop"] = f"{crop:.2f}"
         pt = pt_ref.get("pt")
         if pt:
             p, t = pt.position
@@ -254,7 +291,9 @@ def cmd_live(args, cfg) -> int:
     try:
         with HailoClassifier(str(hef)) as clf, PanTilt(cfg) as pt:
             pt_ref["pt"] = pt
-            camera = _Camera(cfg, preview=not args.no_preview, port=args.port, status=status)
+            camera = _Camera(cfg, preview=not args.no_preview, port=args.port,
+                             status=status, thumb=thumb)
+            cam_ref["camera"] = camera
             time.sleep(1)  # let auto-exposure settle
             live = LiveClassifier(camera.grab, clf.classify, smooth=m.smooth_frames, crop=crop,
                                   min_confidence=m.min_confidence)
@@ -278,12 +317,18 @@ def cmd_live(args, cfg) -> int:
                 print(f"live view: {camera.url}")
             live.start()
 
-            if args.scan:
-                _live_scan(args, cfg, pt, live, record)
-            elif args.no_keys:
-                _live_print(live, record, m.log_every_s)
-            else:
-                _live_keys(args, cfg, pt, live, record, m.log_every_s, camera.url)
+            try:
+                if args.scan:
+                    _live_scan(args, cfg, pt, live, record)
+                elif args.no_keys:
+                    _live_print(live, record, m.log_every_s)
+                else:
+                    _live_keys(args, cfg, pt, live, record, m.log_every_s, camera.url)
+            finally:
+                # Must happen while the pipeline is still open: if the `with`
+                # closes it first, the thread's next infer() hits a None and
+                # that AttributeError masks however the run really ended.
+                live.stop()
     finally:
         if live:
             live.stop()

@@ -100,6 +100,8 @@ class HailoClassifier:
 
     def classify(self, x: np.ndarray) -> np.ndarray:
         """x from preprocess() -> class probabilities, shape (len(CLASS_NAMES),)."""
+        if self._pipeline is None:
+            raise RuntimeError("classifier is closed - call open() before classify()")
         out = self._pipeline.infer({self.input_name: x})
         return np.asarray(out[self.output_name], dtype=np.float32).reshape(-1)
 
