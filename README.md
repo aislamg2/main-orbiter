@@ -134,6 +134,41 @@ with PanTilt(load_config("config.toml")) as cam_mount:
 `move_to()` moves smoothly at `speed_dps`. `jump()` goes there instantly.
 `settle=True` waits `settle_s` so the frame isn't blurred by vibration.
 
+## Real-time landmark classification (Hailo-8)
+
+`pantilt live` runs the Mars landmark classifier from
+[mars-landmark-classification](https://github.com/reemshehayib/mars-landmark-classification)
+(`hailo-inference` branch) on every camera frame, on the AI HAT+, while you aim
+the camera.
+
+```bash
+# one-time: the Hailo Python bindings, and the compiled model
+sudo apt install python3-hailort
+mkdir -p models
+cp ~/hailo-inference/mars-landmark-classification/mars_model_float32.hef models/mars_landmark.hef
+
+pantilt live                          # arrow keys aim, live label in the terminal + browser
+pantilt live --log runs/live.csv      # also save predictions with pan/tilt (one row per second)
+pantilt live --crop 0.5               # classify only the middle of the frame (around the crosshair)
+pantilt live --no-keys --no-preview   # headless: print one prediction per second
+
+# raster-scan the map and classify each pose
+pantilt live --scan --pan 40 140 --tilt 50 110 --cols 5 --rows 3 --log runs/scan1.csv
+```
+
+The browser live view (`http://<pi-ip>:8000/`) shows the predicted class,
+confidence, the next two candidates, FPS, and the Hailo inference time.
+
+How each frame is prepared, to match the training tiles: the largest centered
+square (or `crop` of it) is cut out, converted to grayscale, resized to
+224 x 224 and fed to the Hailo as uint8. The normalization is built into the
+HEF. `smooth_frames` averages the last few predictions so the label doesn't
+flicker. Settings are in the `[model]` section of `config.toml`.
+
+Use the HEF rebuilt with the real-image calibration set (`make_calib_set.py` +
+`mars_landmark.alls`). The older HEF expects a different input range and will
+give wrong labels.
+
 ## Configuration
 
 All settings live in [`config.toml`](config.toml): channels, angle limits, pulse
@@ -178,8 +213,10 @@ pantilt/
   config.py      config.toml loading and defaults
   scan.py        raster (serpentine) scan pattern
   stream.py      live camera preview as a web page (MJPEG)
+  classify.py    Hailo-8 landmark classifier + live classification loop
   cli.py         `pantilt` command line
-config.toml      hardware settings
+config.toml      hardware and model settings
+models/          compiled Hailo model (.hef) for `pantilt live`
 find_bounds.py   free arrow-key control with live angles (no limits)
 tests/           hardware-free unit tests
 ```

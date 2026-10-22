@@ -180,6 +180,234 @@ def cmd_scan(args, cfg) -> int:
     return 0
 
 
+# -- live classification -------------------------------------------------------
+class _Camera:
+    """The camera, with or without the browser preview. grab() returns the newest frame."""
+
+    def __init__(self, cfg, preview: bool, port: int | None, status):
+        self.stream = self.picam2 = None
+        if preview:
+            from .stream import CameraStream
+
+            self.stream = CameraStream(cfg.camera, status=status, port=port)
+            self.url = self.stream.start()
+            self.cam = self.stream.picam2
+        else:
+            from picamera2 import Picamera2
+
+            from .stream import camera_transform
+
+            self.picam2 = Picamera2()
+            self.picam2.configure(self.picam2.create_video_configuration(
+                main={"size": (cfg.camera.preview_width, cfg.camera.preview_height)},
+                transform=camera_transform(cfg.camera),
+            ))
+            self.picam2.start()
+            self.url = None
+            self.cam = self.picam2
+
+    def grab(self):
+        return self.cam.capture_array("main")
+
+    def close(self):
+        if self.stream:
+            self.stream.stop()
+        if self.picam2:
+            self.picam2.stop()
+            self.picam2.close()
+
+
+def cmd_live(args, cfg) -> int:
+    """Real-time landmark classification on the Hailo-8, with pan-tilt control."""
+    from .classify import HailoClassifier, LiveClassifier
+
+    m = cfg.model
+    hef = Path(args.hef or m.hef_path)
+    if not hef.exists():
+        print(f"model not found: {hef}\nCopy mars_model_float32.hef from mars-landmark-classification "
+              f"(hailo-inference branch) to {m.hef_path}, or pass --hef PATH.", file=sys.stderr)
+        return 1
+    try:
+        import picamera2  # noqa: F401
+        import hailo_platform  # noqa: F401
+    except ImportError as e:
+        print(f"{e.name} not found. Install with `sudo apt install python3-picamera2 python3-hailort` "
+              "and create the venv with --system-site-packages.", file=sys.stderr)
+        return 1
+
+    crop = args.crop if args.crop is not None else m.crop
+    pt_ref: dict = {}
+
+    def status():
+        d = dict(live.status()) if live else {}
+        pt = pt_ref.get("pt")
+        if pt:
+            p, t = pt.position
+            d["pan"] = p if p is not None else "-"
+            d["tilt"] = t if t is not None else "-"
+        return d
+
+    live = None
+    log = writer = None
+    camera = None
+    try:
+        with HailoClassifier(str(hef)) as clf, PanTilt(cfg) as pt:
+            pt_ref["pt"] = pt
+            camera = _Camera(cfg, preview=not args.no_preview, port=args.port, status=status)
+            time.sleep(1)  # let auto-exposure settle
+            live = LiveClassifier(camera.grab, clf.classify, smooth=m.smooth_frames, crop=crop,
+                                  min_confidence=m.min_confidence)
+            if args.log:
+                Path(args.log).parent.mkdir(parents=True, exist_ok=True)
+                log = open(args.log, "w", newline="")
+                writer = csv.writer(log)
+                writer.writerow(["time", "pan", "tilt", "label", "confidence", "infer_ms",
+                                 *[f"p_{n.replace(' ', '_')}" for n in _class_names()]])
+
+            def record():
+                p = live.latest
+                if writer and p.probs is not None:
+                    pan, tilt = pt.position
+                    writer.writerow([f"{time.time():.3f}", _fmt(pan), _fmt(tilt), p.label,
+                                     f"{p.confidence:.4f}", f"{p.infer_ms:.2f}",
+                                     *[f"{v:.4f}" for v in p.probs]])
+                    log.flush()
+
+            if camera.url:
+                print(f"live view: {camera.url}")
+            live.start()
+
+            if args.scan:
+                _live_scan(args, cfg, pt, live, record)
+            elif args.no_keys:
+                _live_print(live, record, m.log_every_s)
+            else:
+                _live_keys(args, cfg, pt, live, record, m.log_every_s, camera.url)
+    finally:
+        if live:
+            live.stop()
+        if camera:
+            camera.close()
+        if log:
+            log.close()
+    if live and live.error:
+        raise live.error
+    return 0
+
+
+def _class_names():
+    from .classify import CLASS_NAMES
+
+    return CLASS_NAMES
+
+
+def _fmt(v):
+    return "" if v is None else f"{v:.1f}"
+
+
+def _check(live):
+    if live.error:
+        raise live.error
+
+
+def _live_print(live, record, every):
+    """Headless: print one line per interval until Ctrl+C."""
+    while True:
+        time.sleep(every)
+        _check(live)
+        p = live.latest
+        print(f"{p.label:<14} {p.confidence * 100:5.1f}%   {p.fps:5.1f} fps   hailo {p.infer_ms:.1f} ms")
+        record()
+
+
+def _live_scan(args, cfg, pt, live, record):
+    """Raster-scan; at each pose wait for fresh frames, then log the prediction."""
+    pan_range = tuple(args.pan) if args.pan else (cfg.pan.min_angle, cfg.pan.max_angle)
+    tilt_range = tuple(args.tilt) if args.tilt else (cfg.tilt.min_angle, cfg.tilt.max_angle)
+    poses = list(raster(pan_range, tilt_range, args.cols, args.rows))
+    for i, (pan, tilt) in enumerate(poses):
+        pt.move_to(pan=pan, tilt=tilt, settle=True)
+        start = live.latest.frames
+        # Wait until the smoothing window holds only frames taken at this pose.
+        while live.latest.frames - start < cfg.model.smooth_frames + 1:
+            _check(live)
+            time.sleep(0.01)
+        p = live.latest
+        record()
+        top = ", ".join(f"{n} {v * 100:.0f}%" for n, v in p.top3)
+        print(f"[{i + 1}/{len(poses)}] pan={pan:.1f} tilt={tilt:.1f} -> {top}")
+    pt.center()
+
+
+def _live_keys(args, cfg, pt, live, record, every, url):
+    import curses
+
+    def loop(scr):
+        scr.keypad(True)
+        scr.timeout(100)  # refresh the readout even without key presses
+        try:
+            curses.curs_set(0)
+        except curses.error:
+            pass
+        step = args.step
+        pt.center(smooth=False)
+        last_log = 0.0
+        msg = ""
+        while True:
+            _check(live)
+            now = time.time()
+            if now - last_log >= every:
+                record()
+                last_log = now
+            p = live.latest
+            pan, tilt = pt.position
+            scr.erase()
+            rows = [
+                "Live landmark classification (Hailo-8)",
+                f"view: {url}" if url else "view: (preview off)",
+                "",
+                f"class = {p.label}   {p.confidence * 100:5.1f}%",
+                *[f"   {n:<14} {v * 100:5.1f}%" for n, v in p.top3[1:]],
+                "",
+                f"fps   = {p.fps:5.1f}    hailo = {p.infer_ms:5.1f} ms",
+                f"pan   = {_fmt(pan):>5}    tilt  = {_fmt(tilt):>5}    step = {step} deg",
+                "",
+                "arrows: move   +/-: step   c: center   r: release   q: quit",
+                msg,
+            ]
+            for y, text in enumerate(rows):
+                try:
+                    scr.addstr(y, 0, text)
+                except curses.error:
+                    pass  # terminal too small
+            scr.refresh()
+            k = scr.getch()
+            if k == -1:
+                continue
+            msg = ""
+            if k == curses.KEY_UP:
+                pt.nudge(dtilt=+step)
+            elif k == curses.KEY_DOWN:
+                pt.nudge(dtilt=-step)
+            elif k == curses.KEY_RIGHT:
+                pt.nudge(dpan=+step)
+            elif k == curses.KEY_LEFT:
+                pt.nudge(dpan=-step)
+            elif k in (ord("+"), ord("=")):
+                step = min(step + 1, 20)
+            elif k in (ord("-"), ord("_")):
+                step = max(step - 1, 1)
+            elif k in (ord("c"), ord("C")):
+                pt.center()
+            elif k in (ord("r"), ord("R")):
+                pt.release()
+                msg = "released - next arrow key re-engages"
+            elif k in (ord("q"), ord("Q"), 27):
+                break
+
+    curses.wrapper(loop)
+
+
 # -- entry point -------------------------------------------------------------
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="pantilt", description=__doc__)
@@ -212,6 +440,21 @@ def build_parser() -> argparse.ArgumentParser:
     sc.add_argument("--capture", metavar="DIR", help="save a photo at each pose into DIR")
     sc.add_argument("--dwell", type=float, default=0.5, help="pause per pose without --capture")
     sc.set_defaults(func=cmd_scan)
+
+    lv = sub.add_parser("live", help="real-time landmark classification on the Hailo-8")
+    lv.add_argument("--hef", help="compiled model (default: [model] hef_path in config.toml)")
+    lv.add_argument("--crop", type=float, help="fraction of the frame to classify, centered (0-1]")
+    lv.add_argument("--log", metavar="CSV", help="save predictions with pan/tilt to a CSV file")
+    lv.add_argument("--no-preview", action="store_true", help="don't serve the browser live view")
+    lv.add_argument("--port", type=int, help="live view port (default: preview_port)")
+    lv.add_argument("--no-keys", action="store_true", help="no keyboard control; print predictions")
+    lv.add_argument("--step", type=int, default=2, help="degrees per key press (default 2)")
+    lv.add_argument("--scan", action="store_true", help="raster-scan and classify at each pose")
+    lv.add_argument("--pan", nargs=2, type=float, metavar=("MIN", "MAX"), help="scan pan range")
+    lv.add_argument("--tilt", nargs=2, type=float, metavar=("MIN", "MAX"), help="scan tilt range")
+    lv.add_argument("--cols", type=int, default=5, help="scan poses per row (default 5)")
+    lv.add_argument("--rows", type=int, default=3, help="scan rows (default 3)")
+    lv.set_defaults(func=cmd_live)
     return p
 
 

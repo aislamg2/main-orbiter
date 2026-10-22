@@ -51,6 +51,21 @@ class CameraConfig:
 
 
 @dataclass
+class ModelConfig:
+    hef_path: str = "models/mars_landmark.hef"  # compiled Hailo model (mars-landmark-classification)
+    crop: float = 1.0          # fraction of the frame's short side to classify (centered)
+    smooth_frames: int = 5     # average predictions over N frames to steady the label
+    min_confidence: float = 0.0  # below this, show "uncertain" (0-1)
+    log_every_s: float = 1.0   # live mode: seconds between rows in the predictions log
+
+    def __post_init__(self):
+        if not 0 < self.crop <= 1:
+            raise ValueError("crop must be in (0, 1]")
+        if self.smooth_frames < 1:
+            raise ValueError("smooth_frames must be >= 1")
+
+
+@dataclass
 class Config:
     driver: DriverConfig = field(default_factory=DriverConfig)
     pan: ServoConfig = field(default_factory=lambda: ServoConfig(channel=1))
@@ -59,6 +74,7 @@ class Config:
     )
     motion: MotionConfig = field(default_factory=MotionConfig)
     camera: CameraConfig = field(default_factory=CameraConfig)
+    model: ModelConfig = field(default_factory=ModelConfig)
 
 
 _SECTIONS = {
@@ -67,6 +83,7 @@ _SECTIONS = {
     "tilt": ServoConfig,
     "motion": MotionConfig,
     "camera": CameraConfig,
+    "model": ModelConfig,
 }
 
 

@@ -36,3 +36,10 @@ preview_width = 1280     # live preview size (find_bounds.py --preview)
 preview_height = 720
 preview_quality = 70     # JPEG quality of the preview stream, 1-100
 preview_port = 8000      # open http://<pi-ip>:8000/ in a browser
+
+[model]                  # Hailo landmark classifier (pantilt live)
+hef_path = "models/mars_landmark.hef"  # copy the HEF from mars-landmark-classification here
+crop = 1.0               # part of the frame to classify: 1.0 = largest centered square, 0.5 = zoom on crosshair
+smooth_frames = 5        # average over N frames so the label doesn't flicker (1 = off)
+min_confidence = 0.0     # show "uncertain" below this confidence (0-1)
+log_every_s = 1.0        # seconds between rows in the predictions CSV (--log)
