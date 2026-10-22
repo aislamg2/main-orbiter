@@ -15,6 +15,7 @@ from .config import load_config
 from .controller import PanTilt
 from .scan import raster
 from .board_scan import cmd_board_scan, cmd_calibrate_step, cmd_teach
+from .clean import cmd_clean
 from .survey import cmd_measure_k, cmd_survey
 
 
@@ -544,6 +545,16 @@ def build_parser() -> argparse.ArgumentParser:
     bs.add_argument("--no-preview", action="store_true", help="don't serve the browser live view")
     bs.add_argument("--port", type=int, help="live view port (default: preview_port)")
     bs.set_defaults(func=cmd_board_scan)
+
+    cl = sub.add_parser("clean", help="delete saved photos from data/runs (asks first)")
+    which = cl.add_mutually_exclusive_group()
+    which.add_argument("--all", action="store_true", help="every run")
+    which.add_argument("--keep", type=int, metavar="N", help="all but the newest N runs")
+    which.add_argument("--run", action="append", metavar="NAME", help="this run (repeatable)")
+    cl.add_argument("--everything", action="store_true", help="remove whole run folders, CSVs included")
+    cl.add_argument("--yes", "-y", action="store_true", help="don't ask for confirmation")
+    cl.add_argument("--runs-dir", default="data/runs", help="where runs are saved (default: data/runs)")
+    cl.set_defaults(func=cmd_clean)
 
     lv = sub.add_parser("live", help="real-time landmark classification on the Hailo-8")
     lv.add_argument("--hef", help="compiled model (default: [model] hef_path in config.toml)")

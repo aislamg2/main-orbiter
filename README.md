@@ -231,6 +231,20 @@ Each run writes to `data/runs/board-<timestamp>/`:
   afterwards without re-scanning
 - `run.json`: the settings used for the run
 
+To delete saved photos:
+
+```bash
+pantilt clean                 # list runs and photo counts, delete nothing
+pantilt clean --all           # delete the photos from every run
+pantilt clean --keep 2        # keep only the newest 2 runs' photos
+pantilt clean --run board-20261022-141500
+pantilt clean --all --everything   # whole run folders, CSVs included
+```
+
+It shows what it will delete and asks first (`--yes` skips the question). By
+default it removes only images and keeps the small `poses.csv` / `run.json`.
+Deleted files are gone for good: there's no trash on the Pi.
+
 How it avoids blur and duplicate photos (all set in `[sweep]` in `config.toml`):
 
 | Setting | What it does |
@@ -299,6 +313,7 @@ pantilt/
   stream.py      live camera preview as a web page (MJPEG)
   classify.py    Hailo-8 landmark classifier + live classification loop
   board_scan.py  `teach` corners, `calibrate-step`, `board-scan` for craters
+  clean.py       `clean`: delete saved photos from data/runs
   cli.py         `pantilt` command line
 config.toml      hardware and model settings
 models/          compiled Hailo model (.hef) for `pantilt live`
