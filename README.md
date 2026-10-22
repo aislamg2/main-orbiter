@@ -188,6 +188,8 @@ and **s** to save to `data/board_corners.json`. The scan never leaves this shape
 so nothing off the board gets photographed.
 
 **2. Measure the step (once, and again if you change the camera, lens or servos).**
+Re-run it if your `data/board_step.json` is from before the find + confirm
+scan: that scan also needs the direction each servo moves the image.
 
 ```bash
 pantilt calibrate-step --crop 0.2
@@ -217,19 +219,47 @@ thin unscanned strip at the edges. During
 **4. Scan.**
 
 ```bash
-pantilt board-scan --crop 0.2                       # one pass, threshold from config.toml
-pantilt board-scan --crop 0.2 --threshold 0.75      # stricter
-pantilt board-scan --crop 0.2 --passes 0            # keep going until Ctrl+C
+pantilt board-scan --crop 0.2 --dry-run          # how many windows, moves nothing
+pantilt board-scan --crop 0.2 --threshold 0.7
+pantilt board-scan --crop 0.2 --passes 0         # keep going until Ctrl+C
 ```
+
+It works in two stages, so a crater doesn't get missed just because it sat
+across the edge of a square:
+
+1. **Find:** point at the board and slide the crop square across one still
+   frame, a third of a square at a time (about 90 windows on this board). The
+   camera doesn't move, so there's no blur, and it takes well under a second.
+   Every window scoring at least `look_threshold` (0.3) becomes a candidate.
+   Candidates on top of each other are merged.
+2. **Confirm:** for each candidate, nearest first, aim the camera straight at
+   it, let it settle, then search the frames for the best-scoring square
+   around the middle (steps of a quarter, an eighth and a sixteenth of a
+   square). If the best square is well off-centre, re-aim there and check
+   again. A photo is saved only if the best score clears `--threshold`.
+   Anything less is logged as a near miss.
 
 Each run writes to `data/runs/board-<timestamp>/`:
 
-- `photos/`: the full frame (`.jpg`) plus the exact crop the model judged
-  (`_crop.png`), named by pose and confidence
-- `poses.csv`: every pose with all 8 probabilities and what happened there
-  (`saved`, `below`, `near`, `wait`, `cap`), so you can pick a better threshold
-  afterwards without re-scanning
+- `photos/`: the full frame (`.jpg`) plus the exact square the model judged
+  (`_crop.png`), named by position and confidence
+- `overview_*.jpg`: the find frame with the board outline (blue) and every
+  checked spot: green = photo, orange = near miss, grey = skipped by a cooldown,
+  labelled `id: find score -> confirm score`
+- `candidates.csv`: every checked spot with its find and confirm scores, all 8
+  probabilities, and what happened (`saved`, `near-miss`, `near`, `wait`, `cap`)
+- `windows.csv`: every find window's scores, so you can see what the model
+  thought of the whole board
 - `run.json`: the settings used for the run
+
+If nothing gets photographed, look at the overview and `candidates.csv`. If
+there are near misses at, say, 0.55-0.65, the threshold is the problem. If
+there are no candidates at all, the model isn't recognising the craters at
+this crop.
+
+`--grid` runs the older stop-and-go grid instead (one judgement per grid square,
+writing `poses.csv`). `--trace` / `--trace-edges` still walk that grid, which
+is useful for checking the taught corners.
 
 To delete saved photos:
 
@@ -242,7 +272,9 @@ pantilt clean --all --everything   # whole run folders, CSVs included
 ```
 
 It shows what it will delete and asks first (`--yes` skips the question). By
-default it removes only images and keeps the small `poses.csv` / `run.json`.
+default it removes only the images in `photos/` (and a survey's `hits/` and
+`tiles/`). The CSVs, `run.json` and the small `overview_*.jpg` stay unless you
+add `--everything`.
 Deleted files are gone for good: there's no trash on the Pi.
 
 How it avoids blur and duplicate photos (all set in `[sweep]` in `config.toml`):
@@ -252,6 +284,11 @@ How it avoids blur and duplicate photos (all set in `[sweep]` in `config.toml`):
 | `speed_dps`, `settle_s` | Moves at 30°/s with eased starts and stops, then always waits 0.4 s |
 | `settle_max_s`, `still_diff` | Then keeps waiting until two frames in a row look the same (up to 2 s). `still` = 0 in the CSV means it gave up |
 | `threshold` | Crater probability needed for a photo (`--threshold`) |
+| `look_threshold` | Find stage: a window this sure is worth aiming the camera at |
+| `find_stride` | Find stage: window step as a fraction of the square (0.33 = a third) |
+| `find_frames`, `confirm_frames` | Frames averaged per window in each stage |
+| `refine_steps` | Confirm stage: how many times it may re-aim towards a better square |
+| `max_candidates` | Spots checked per pass, strongest first |
 | `cooldown_tiles` | No new photo within half a square of one already saved, which stops repeats of the same square on later `--passes` |
 | `cooldown_s` | Minimum seconds between photos (0 = off, since squares no longer overlap) |
 | `max_photos` | Hard cap per run |
@@ -312,7 +349,8 @@ pantilt/
   scan.py        raster (serpentine) scan pattern
   stream.py      live camera preview as a web page (MJPEG)
   classify.py    Hailo-8 landmark classifier + live classification loop
-  board_scan.py  `teach` corners, `calibrate-step`, `board-scan` for craters
+  board_scan.py  `teach` corners, `calibrate-step`, the grid scan and `--trace`
+  hunt.py        `board-scan` find + confirm: sliding window, aim, refine, photograph
   clean.py       `clean`: delete saved photos from data/runs
   cli.py         `pantilt` command line
 config.toml      hardware and model settings

@@ -219,7 +219,7 @@ def test_full_scan_with_fake_hardware(tmp_path, monkeypatch):
     out = tmp_path / "run"
     cfg = Config()
     args = build_parser().parse_args([
-        "board-scan", "--crop", "0.2", "--corners", str(corners), "--hef", str(hef),
+        "board-scan", "--grid", "--crop", "0.2", "--corners", str(corners), "--hef", str(hef),
         "--out", str(out), "--cooldown-tiles", "1.2", "--no-preview"])
     assert bs.cmd_board_scan(args, cfg) == 0
 

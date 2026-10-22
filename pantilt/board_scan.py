@@ -280,16 +280,23 @@ def image_shift(a, b) -> tuple[float, float, float]:
 
 
 def save_step(path: str | Path, frame_w: int, frame_h: int,
-              pan_px_per_deg: float, tilt_px_per_deg: float) -> None:
+              pan_px_per_deg: float, tilt_px_per_deg: float,
+              pan_vec: tuple[float, float] | None = None,
+              tilt_vec: tuple[float, float] | None = None) -> None:
+    """pan_vec / tilt_vec: (x, y) pixels the scene moves per +1 servo degree."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({
+    data = {
         "measured": datetime.now().isoformat(timespec="seconds"),
         "frame": [frame_w, frame_h],
         "pan_px_per_deg": round(pan_px_per_deg, 3),
         "tilt_px_per_deg": round(tilt_px_per_deg, 3),
         "note": "image shift per servo degree, from `pantilt calibrate-step`",
-    }, indent=2))
+    }
+    if pan_vec and tilt_vec:
+        data["pan_vec"] = [round(v, 3) for v in pan_vec]
+        data["tilt_vec"] = [round(v, 3) for v in tilt_vec]
+    path.write_text(json.dumps(data, indent=2))
 
 
 def load_step(path: str | Path) -> dict:
@@ -478,7 +485,7 @@ def cmd_calibrate_step(args, cfg: Config) -> int:
             time.sleep(1)  # let auto-exposure settle
             for axis, b in (("pan", base[0]), ("tilt", base[1])):
                 progress["axis"] = axis
-                vals, quals = [], []
+                vals, quals, vecs = [], [], []
                 for i in range(reps):
                     progress["rep"] = f"{i + 1}/{reps}"
                     go(**{axis: b - margin})          # approach from below every time
@@ -487,17 +494,19 @@ def cmd_calibrate_step(args, cfg: Config) -> int:
                     go(**{axis: b + delta / 2})
                     dy, dx, q = image_shift(a, grab())
                     vals.append(math.hypot(dy, dx) / delta)
+                    vecs.append((-dx / delta, -dy / delta))  # image_shift is reversed motion
                     quals.append(q)
                     print(f"  {axis} {i + 1}/{reps}: {math.hypot(dy, dx):6.1f} px over {delta} deg "
                           f"= {vals[-1]:6.2f} px/deg   (match {q:.2f})")
                 go(**{axis: b})
-                results[axis] = (statistics.median(vals), vals, min(quals))
+                vec = tuple(statistics.median(v[k] for v in vecs) for k in (0, 1))
+                results[axis] = (statistics.median(vals), vals, min(quals), vec)
             pt.center()
         h, w = grab().shape[:2]
     finally:
         stream.stop()
 
-    for axis, (med, vals, q) in results.items():
+    for axis, (med, vals, q, _) in results.items():
         spread = (max(vals) - min(vals)) / med if med else 1
         if q < 0.03:
             print(f"warning: {axis} match is weak ({q:.2f}) - aim at a textured part of the "
@@ -507,7 +516,8 @@ def cmd_calibrate_step(args, cfg: Config) -> int:
                   "or re-run with more --reps", file=sys.stderr)
 
     out = Path(args.file or s.step_file)
-    save_step(out, w, h, results["pan"][0], results["tilt"][0])
+    save_step(out, w, h, results["pan"][0], results["tilt"][0],
+              pan_vec=results["pan"][3], tilt_vec=results["tilt"][3])
     crop = args.crop if args.crop is not None else cfg.model.crop
     tp, tt = tile_from_step(load_step(out), w, h, crop)
     est = tile_deg(s.hfov_deg, w, h, crop)
@@ -575,6 +585,9 @@ def cmd_board_scan(args, cfg: Config) -> int:
     cooldown_s = args.cooldown_s if args.cooldown_s is not None else s.cooldown_s
     speed = args.speed or s.speed_dps
 
+    if not (args.grid or args.trace or args.trace_edges):
+        return _find_mode(args, cfg, crop, corners, threshold, cooldown_s, speed)
+
     print(_describe(cfg, crop, tile, source, poses, threshold, cooldown_deg, cooldown_s, speed))
     print()
 
@@ -589,6 +602,32 @@ def cmd_board_scan(args, cfg: Config) -> int:
         return _trace(cfg, crop, poses, speed, args.trace_edges, hold)
     return _scan(args, cfg, crop, corners, tile, source, poses, threshold, cooldown_deg,
                  cooldown_s, speed)
+
+
+def _find_mode(args, cfg: Config, crop, corners, threshold, cooldown_s, speed) -> int:
+    from . import hunt
+
+    s = cfg.sweep
+    try:
+        step = load_step(s.step_file)
+        hunt.View(step, 2, 2, 0, 0)  # checks the calibration has direction info
+    except FileNotFoundError:
+        print(f"no calibration at {s.step_file} - run `pantilt calibrate-step` first "
+              "(or use --grid)", file=sys.stderr)
+        return 1
+    except (ValueError, KeyError) as e:
+        print(f"{e} (or use --grid)", file=sys.stderr)
+        return 1
+
+    side, poses, stride, n_windows = hunt.plan_summary(cfg, corners, step, crop)
+    print(hunt.describe(cfg, crop, side, poses, stride, n_windows, threshold))
+    print()
+    if args.dry_run:
+        for p in poses:
+            print(f"  find pose r{p.row} c{p.col}  ->  pan {p.pan:6.2f}  tilt {p.tilt:6.2f}")
+        return 0
+    tiles = args.cooldown_tiles if args.cooldown_tiles is not None else s.cooldown_tiles
+    return hunt.run_hunt(args, cfg, corners, crop, threshold, tiles, cooldown_s, speed)
 
 
 def _trace(cfg: Config, crop: float, poses: list[Pose], speed: float, edges_only: bool,
