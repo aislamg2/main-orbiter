@@ -188,7 +188,7 @@ and **s** to save to `data/board_corners.json`. The scan never leaves this shape
 so nothing off the board gets photographed.
 
 **2. Measure the step (once, and again if you change the camera, lens or servos).**
-Re-run it if your `data/board_step.json` is from before the find + confirm
+Re-run it if your `data/board_step.json` is from before the scan + revisit
 scan: that scan also needs the direction each servo moves the image.
 
 ```bash
@@ -227,29 +227,36 @@ pantilt board-scan --crop 0.2 --passes 0         # keep going until Ctrl+C
 It works in two stages, so a crater doesn't get missed just because it sat
 across the edge of a square:
 
-1. **Find:** point at the board and slide the crop square across one still
-   frame, a third of a square at a time (about 90 windows on this board). The
-   camera doesn't move, so there's no blur, and it takes well under a second.
-   Every window scoring at least `look_threshold` (0.15) becomes a candidate.
-   Candidates on top of each other are merged.
-2. **Confirm:** for each candidate, nearest first, aim the camera straight at
-   it, let it settle, then search the frames for the best-scoring square
-   around the middle (steps of a quarter, an eighth and a sixteenth of a
-   square). If the best square is well off-centre, re-aim there and check
-   again. A photo is saved only if the best score clears `--threshold`.
-   Anything less is logged as a near miss.
+1. **Scan:** the camera walks the whole board, one crop square per stop (the
+   same grid `--trace` shows), in a snake pattern. At each stop, once the image
+   is still, it scores the centre square plus copies nudged a third of a square
+   each way, averaged over `find_frames` frames. Each part of the board is
+   judged near the middle of the lens, where it's sharpest. Any stop where the
+   crater score rises to `look_threshold` (0.15) is flagged as a point of
+   interest. Points that sit on top of each other are merged.
+2. **Go back:** it revisits each point of interest, nearest first. It aims the
+   camera straight at it, lets it settle, and averages `confirm_frames` frames
+   while searching for the best-scoring square around the middle (steps of a
+   quarter, an eighth and a sixteenth of a square). If the best square is well
+   off-centre, it re-aims there and checks again. A photo is saved only if the
+   best score clears `--threshold`. Anything less is logged as a near miss.
+
+`--wide` skips walking the grid and does the first stage from a single frame
+of the whole board (quicker, but the board edges are judged near the edge of
+the lens).
 
 Each run writes to `data/runs/board-<timestamp>/`:
 
 - `photos/`: the full frame (`.jpg`) plus the exact square the model judged
   (`_crop.png`), named by position and confidence
-- `overview_*.jpg`: the find frame with the board outline (blue) and every
-  checked spot: green = photo, orange = near miss, grey = skipped by a cooldown,
-  labelled `id: find score -> confirm score`
-- `candidates.csv`: every checked spot with its find and confirm scores, all 8
+- `overview_*.jpg`: one picture of the whole board with the outline (blue),
+  the scan stops (thin magenta), and every revisited spot: green = photo,
+  orange = near miss, grey = skipped by a cooldown, labelled
+  `id: scan score -> confirm score`
+- `candidates.csv`: every revisited spot with its scan and confirm scores, all 8
   probabilities, and what happened (`saved`, `near-miss`, `near`, `wait`, `cap`)
-- `windows.csv`: every find window's scores, so you can see what the model
-  thought of the whole board
+- `windows.csv`: every window scored during the scan, so you can see what
+  the model thought of the whole board
 - `run.json`: the settings used for the run
 
 If nothing gets photographed, look at the overview and `candidates.csv`. If
@@ -257,8 +264,8 @@ there are near misses at, say, 0.55-0.65, the threshold is the problem. If
 there are no candidates at all, the model isn't recognising the craters at
 this crop.
 
-`--grid` runs the older stop-and-go grid instead (one judgement per grid square,
-writing `poses.csv`). `--trace` / `--trace-edges` still walk that grid, which
+`--grid` runs the older scan instead (one judgement per grid square, no going
+back, writing `poses.csv`). `--trace` / `--trace-edges` still walk that grid, which
 is useful for checking the taught corners.
 
 To delete saved photos:
@@ -284,8 +291,8 @@ How it avoids blur and duplicate photos (all set in `[sweep]` in `config.toml`):
 | `speed_dps`, `settle_s` | Moves at 30°/s with eased starts and stops, then always waits 0.4 s |
 | `settle_max_s`, `still_diff` | Then keeps waiting until two frames in a row look the same (up to 2 s). `still` = 0 in the CSV means it gave up |
 | `threshold` | Crater probability needed for a photo (`--threshold`) |
-| `look_threshold` | Find stage: a window this sure is worth aiming the camera at |
-| `find_stride` | Find stage: window step as a fraction of the square (0.33 = a third) |
+| `look_threshold` | Scan: a crater score this high makes a spot worth going back to |
+| `find_stride` | Scan: how far the nudged squares move, as a fraction of a square (0.33 = a third) |
 | `find_frames`, `confirm_frames` | Frames averaged per window in each stage |
 | `refine_steps` | Confirm stage: how many times it may re-aim towards a better square |
 | `max_candidates` | Spots checked per pass, strongest first |
@@ -350,7 +357,7 @@ pantilt/
   stream.py      live camera preview as a web page (MJPEG)
   classify.py    Hailo-8 landmark classifier + live classification loop
   board_scan.py  `teach` corners, `calibrate-step`, the grid scan and `--trace`
-  hunt.py        `board-scan` find + confirm: sliding window, aim, refine, photograph
+  hunt.py        `board-scan`: scan the board, go back to likely craters, photograph
   clean.py       `clean`: delete saved photos from data/runs
   cli.py         `pantilt` command line
 config.toml      hardware and model settings

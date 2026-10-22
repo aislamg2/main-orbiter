@@ -1,14 +1,15 @@
-"""Find-then-confirm crater hunting: the default `pantilt board-scan`.
+"""Scan-then-revisit crater hunting: the default `pantilt board-scan`.
 
-The grid scan judges each square once, wherever it happens to land, so a
-crater sitting across a square's edge scores low and is missed. This does it
-in two stages instead:
+Judging each grid square once, wherever it happens to land, misses a crater
+sitting across a square's edge. This does it in two stages instead:
 
-1. Find. Point at the board and slide the crop square across the still frame
-   in small steps (a third of a square by default). Every crater ends up near
-   the middle of some window. The camera doesn't move, so there's no blur, and
-   on the Hailo a hundred windows take well under a second. Anything scoring
-   at least `look_threshold` becomes a candidate.
+1. Scan. Walk the camera over the board grid (one crop square per stop, as in
+   `--trace`). At each stop, once the mount is still, score the centre square
+   and copies nudged a third of a square each way, so every crater is near the
+   middle of some window, and each part of the board is judged near the lens
+   centre where the picture is sharpest. Anything scoring at least
+   `look_threshold` is a point of interest. (`--wide` does this from a single
+   frame of the whole board instead, without walking the grid.)
 2. Confirm. Aim the camera straight at each candidate, let it settle, and
    search for the best-scoring square around the middle (a quarter square
    each way, then an eighth, then a sixteenth - on the same frames, no moving).
@@ -33,7 +34,7 @@ from datetime import datetime
 from pathlib import Path
 
 from .board_scan import (
-    Cooldown, Corner, _save_photo, check_corners, load_step, plan, wait_still,
+    Cooldown, Corner, _save_photo, check_corners, load_step, plan, tile_from_step, wait_still,
 )
 from .config import Config
 from .controller import PanTilt
@@ -115,6 +116,25 @@ def find_poses(corners: list[Corner], step: dict, frame_w: int, frame_h: int, si
     return plan(corners, ((frame_w - margin) / ppd_p, (frame_h - margin) / ppd_t), overlap=0.05)
 
 
+def scan_poses(corners: list[Corner], step: dict, frame_w: int, frame_h: int, crop: float,
+               overlap: float, max_gap: float):
+    """The board grid the camera walks: one crop square per stop, as `--trace` shows."""
+    return plan(corners, tile_from_step(step, frame_w, frame_h, crop), overlap,
+                serpentine=True, max_gap=max_gap)
+
+
+def local_windows(view: View, corners: list[Corner], side: int, stride: int) -> list[tuple[int, int]]:
+    """The centre window plus copies nudged by `stride`, out to half a square each way.
+
+    Neighbouring grid stops are at most a square apart, so between them these
+    windows form one even lattice over the whole board.
+    """
+    n = int(side / 2 / stride + 1e-9)
+    cx, cy = int(view.cx), int(view.cy)
+    out = [(cx + i * stride, cy + j * stride) for j in range(-n, n + 1) for i in range(-n, n + 1)]
+    return [xy for xy in out if window_on_board(view, corners, *xy, side)]
+
+
 def crop_at(frame, x: int, y: int, side: int):
     h = side // 2
     return frame[y - h:y - h + side, x - h:x - h + side, :3]
@@ -166,25 +186,39 @@ class Candidate:
 
 
 # -- the run -------------------------------------------------------------------
-def plan_summary(cfg: Config, corners, step, crop: float) -> tuple[int, list, int, int]:
+def plan_summary(cfg: Config, corners, step, crop: float,
+                 wide: bool = False) -> tuple[int, list, int, int]:
+    s = cfg.sweep
     w, h = cfg.camera.preview_width, cfg.camera.preview_height
     side = max(1, int(min(w, h) * crop))
-    stride = max(1, round(side * cfg.sweep.find_stride))
-    poses = find_poses(corners, step, w, h, side)
-    counts = [len(windows(View(step, w, h, p.pan, p.tilt), corners, side, stride)) for p in poses]
+    stride = max(1, round(side * s.find_stride))
+    if wide:
+        poses = find_poses(corners, step, w, h, side)
+        pick = windows
+    else:
+        poses = scan_poses(corners, step, w, h, crop, s.overlap, s.max_gap)
+        pick = local_windows
+    counts = [len(pick(View(step, w, h, p.pan, p.tilt), corners, side, stride)) for p in poses]
     return side, poses, stride, sum(counts)
 
 
 def describe(cfg: Config, crop: float, side: int, poses, stride: int, n_windows: int,
-             threshold: float) -> str:
+             threshold: float, wide: bool = False) -> str:
     s = cfg.sweep
+    if wide:
+        find = (f"find         {len(poses)} wide view{'s' if len(poses) != 1 else ''}, "
+                f"{n_windows} windows {stride} px apart (--wide)")
+    else:
+        rows = max(p.row for p in poses) + 1
+        cols = max(p.col for p in poses) + 1
+        find = (f"scan         {cols} x {rows} = {len(poses)} stops over the board, "
+                f"{n_windows} windows in all ({stride} px nudges)")
     return "\n".join([
-        "mode         find + confirm  (--grid for the old stop-and-go grid)",
+        "mode         scan + revisit  (--grid for the old one-look-per-square scan)",
         f"crop         {crop:.2f} of the frame -> {side} px square",
-        f"find         {len(poses)} camera pose{'s' if len(poses) != 1 else ''}, "
-        f"{n_windows} windows {stride} px apart",
-        f"candidates   {s.target} >= {s.look_threshold:.2f} in the find stage, up to {s.max_candidates}",
-        f"photo        {s.target} >= {threshold:.2f} after aiming straight at it "
+        find,
+        f"interest     {s.target} >= {s.look_threshold:.2f} during the scan, up to {s.max_candidates} revisits",
+        f"photo        {s.target} >= {threshold:.2f} after going back and aiming straight at it "
         f"(up to {s.refine_steps} re-aims)",
     ])
 
@@ -213,7 +247,8 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
 
     target_i = CLASS_NAMES.index(s.target)
     w = cfg.camera.preview_width
-    side, poses, stride, _ = plan_summary(cfg, corners, step, crop)
+    wide = bool(getattr(args, "wide", False))
+    side, poses, stride, _ = plan_summary(cfg, corners, step, crop, wide)
     square_deg = side / min(step["pan_px_per_deg"], step["tilt_px_per_deg"]) / (w / step["frame"][0])
     cooldown = Cooldown(cooldown_tiles * square_deg, cooldown_s,
                         args.max_photos if args.max_photos is not None else s.max_photos)
@@ -221,7 +256,7 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
     run = Path(args.out or f"data/runs/board-{datetime.now():%Y%m%d-%H%M%S}")
     (run / "photos").mkdir(parents=True, exist_ok=True)
     (run / "run.json").write_text(json.dumps({
-        "started": datetime.now().isoformat(timespec="seconds"), "mode": "find+confirm",
+        "started": datetime.now().isoformat(timespec="seconds"), "mode": "wide+confirm" if wide else "scan+revisit",
         "corners": corners, "crop": crop, "side_px": side, "stride_px": stride,
         "find_poses": [[p.pan, p.tilt] for p in poses], "target": s.target,
         "look_threshold": s.look_threshold, "threshold": threshold,
@@ -231,7 +266,7 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
         "hef": str(hef),
     }, indent=2))
 
-    progress = {"mode": "find + confirm", "stage": "starting", "photos": 0}
+    progress = {"mode": "scan + revisit", "stage": "starting", "photos": 0}
     pt_ref: dict = {}
     cam_ref: dict = {}
 
@@ -277,14 +312,23 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
                 n_pass += 1
                 progress["pass"] = n_pass
 
-                # 1. find
+                # 0. one picture of the whole board, to draw the results on
                 found, overviews = [], []
+                if not wide:
+                    progress["stage"] = "overview"
+                    mid = (sum(p for p, _ in corners) / 4, sum(t for _, t in corners) / 4)
+                    aim(*mid)
+                    frame = camera.grab()
+                    overviews.append((frame, View(step, frame.shape[1], frame.shape[0], *pt.position)))
+
+                # 1. scan (or, with --wide, look at the whole board at once)
+                label = "find" if wide else "scan"
                 for k, pose in enumerate(poses):
-                    progress["stage"] = f"find {k + 1}/{len(poses)}"
+                    progress["stage"] = f"{label} {k + 1}/{len(poses)}"
                     still = aim(pose.pan, pose.tilt)
                     frames = [camera.grab() for _ in range(s.find_frames)]
                     view = View(step, frames[0].shape[1], frames[0].shape[0], *pt.position)
-                    centres = windows(view, corners, side, stride)
+                    centres = (windows if wide else local_windows)(view, corners, side, stride)
                     t0 = time.time()
                     probs = score_windows(frames, centres, side, clf.classify)
                     for (x, y), p in zip(centres, probs):
@@ -295,14 +339,22 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
                         if p[target_i] >= s.look_threshold:
                             found.append(Candidate(pan, tilt, float(p[target_i]), k, x, y))
                     win_log.flush()
-                    best = max((float(p[target_i]) for p in probs), default=0.0)
-                    print(f"find {k + 1}/{len(poses)}: {len(centres)} windows in "
-                          f"{time.time() - t0:.1f}s, best {s.target} {best:.2f}"
-                          f"{'' if still else '  [still shaking]'}")
-                    overviews.append((frames[0], view))
+                    best_i = int(np.argmax([p[target_i] for p in probs])) if probs else -1
+                    best = float(probs[best_i][target_i]) if probs else 0.0
+                    shake = "" if still else "  [still shaking]"
+                    if wide:
+                        print(f"find {k + 1}/{len(poses)}: {len(centres)} windows in "
+                              f"{time.time() - t0:.1f}s, best {s.target} {best:.2f}{shake}")
+                        overviews.append((frames[0], view))
+                    else:
+                        top = CLASS_NAMES[int(np.argmax(probs[best_i]))] if probs else "-"
+                        flag = "  <- point of interest" if best >= s.look_threshold else ""
+                        print(f"  scan [{k + 1}/{len(poses)}] pan {pose.pan:6.2f} tilt {pose.tilt:6.2f}  "
+                              f"best {s.target} {best:.2f}  (top {top}){shake}{flag}")
 
                 cands = pick_candidates(found, 0.5 * square_deg, s.max_candidates)
-                print(f"{len(found)} windows over {s.look_threshold:.2f} -> {len(cands)} spots to check")
+                print(f"\n{len(found)} windows over {s.look_threshold:.2f} -> "
+                      f"{len(cands)} point{'' if len(cands) == 1 else 's'} of interest to go back to")
 
                 # 2. confirm, nearest first so the mount doesn't zig-zag
                 here = pt.position
@@ -347,8 +399,9 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
                     c.frame = None  # don't hold every frame in memory
 
                 for k, (frame, view) in enumerate(overviews):
+                    mine = order if not wide else [c for c in order if c.find_pose == k]
                     _overview(run / f"overview_p{n_pass}_{k}.jpg", frame, view, corners, side,
-                              [c for c in order if c.find_pose == k])
+                              mine, [] if wide else poses)
             pt.center()
     finally:
         if camera:
@@ -411,10 +464,12 @@ def _confirm(c: Candidate, aim, camera, pt, step, corners, side, classify, s, ta
         c.moves += 1
 
 
-def _overview(path: Path, frame, view: View, corners, side: int, cands: list[Candidate]):
+def _overview(path: Path, frame, view: View, corners, side: int, cands: list[Candidate],
+              scan: list | None = None):
     """The find frame with the board outline and every checked spot drawn on it.
 
-    Green = photographed, orange = near miss, grey = skipped by a cooldown.
+    Blue = board outline, thin magenta = the scan stops, green = photographed, orange = near miss,
+    grey = skipped by a cooldown.
     """
     from PIL import Image, ImageDraw
 
@@ -424,6 +479,9 @@ def _overview(path: Path, frame, view: View, corners, side: int, cands: list[Can
     d.line(pts + pts[:1], fill=(0, 200, 255), width=2)
     colours = {"saved": (0, 255, 0), "near-miss": (255, 170, 0)}
     h = side / 2
+    for p in scan or []:
+        x, y = view.to_px(p.pan, p.tilt)
+        d.rectangle([x - h, y - h, x + h, y + h], outline=(255, 0, 255), width=1)
     for c in cands:
         col = colours.get(c.action, (160, 160, 160))
         x, y = view.to_px(c.pan, c.tilt)  # where confirm pinned it, not the first rough window

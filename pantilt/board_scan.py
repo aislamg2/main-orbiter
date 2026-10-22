@@ -619,12 +619,12 @@ def _find_mode(args, cfg: Config, crop, corners, threshold, cooldown_s, speed) -
         print(f"{e} (or use --grid)", file=sys.stderr)
         return 1
 
-    side, poses, stride, n_windows = hunt.plan_summary(cfg, corners, step, crop)
-    print(hunt.describe(cfg, crop, side, poses, stride, n_windows, threshold))
+    side, poses, stride, n_windows = hunt.plan_summary(cfg, corners, step, crop, args.wide)
+    print(hunt.describe(cfg, crop, side, poses, stride, n_windows, threshold, args.wide))
     print()
     if args.dry_run:
         for p in poses:
-            print(f"  find pose r{p.row} c{p.col}  ->  pan {p.pan:6.2f}  tilt {p.tilt:6.2f}")
+            print(f"  stop r{p.row} c{p.col}  ->  pan {p.pan:6.2f}  tilt {p.tilt:6.2f}")
         return 0
     tiles = args.cooldown_tiles if args.cooldown_tiles is not None else s.cooldown_tiles
     return hunt.run_hunt(args, cfg, corners, crop, threshold, tiles, cooldown_s, speed)

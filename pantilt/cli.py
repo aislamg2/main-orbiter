@@ -526,7 +526,7 @@ def build_parser() -> argparse.ArgumentParser:
     cs.add_argument("--file", help="where to save (default: [sweep] step_file)")
     cs.set_defaults(func=cmd_calibrate_step)
 
-    bs = sub.add_parser("board-scan", help="find craters on the taught board, aim at each, photograph the real ones")
+    bs = sub.add_parser("board-scan", help="scan the taught board, go back to likely craters, photograph the real ones")
     bs.add_argument("--crop", type=float, help="fraction of the frame to classify (default: [model] crop)")
     bs.add_argument("--threshold", type=float, help="target probability that triggers a photo (default: [sweep] threshold)")
     bs.add_argument("--cooldown-tiles", type=float, help="no photo within this many crop widths of a saved one")
@@ -534,7 +534,8 @@ def build_parser() -> argparse.ArgumentParser:
     bs.add_argument("--max-photos", type=int, help="stop saving after this many (0 = no limit)")
     bs.add_argument("--speed", type=float, help="degrees per second between poses (default: [sweep] speed_dps)")
     bs.add_argument("--passes", type=int, default=1, help="times over the board (0 = until Ctrl+C)")
-    bs.add_argument("--grid", action="store_true", help="old stop-and-go grid instead of find + confirm")
+    bs.add_argument("--grid", action="store_true", help="old one-look-per-square grid, no revisits")
+    bs.add_argument("--wide", action="store_true", help="find from one frame of the whole board instead of walking the grid")
     bs.add_argument("--one-way", action="store_true", help="(--grid) every row left to right instead of serpentine")
     bs.add_argument("--dry-run", action="store_true", help="print the grid, move nothing")
     bs.add_argument("--trace", action="store_true", help="walk every grid point without classifying, to check coverage")

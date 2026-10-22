@@ -202,3 +202,50 @@ def test_find_mode_needs_direction_calibration(rig, capsys):
     args = build_parser().parse_args(["board-scan", "--dry-run"])
     assert bs.cmd_board_scan(args, cfg) == 1
     assert "calibrate-step" in capsys.readouterr().err
+
+
+def test_scan_windows_form_an_even_lattice_across_stops():
+    """Every board spot is within a third of a square of some window centre."""
+    from pantilt.board_scan import tile_from_step
+    from pantilt.hunt import local_windows, scan_poses
+
+    step = {"frame": [1280, 720], "pan_px_per_deg": PPD, "tilt_px_per_deg": PPD,
+            "pan_vec": [-PPD, 0], "tilt_vec": [0, PPD]}
+    stops = scan_poses(BOARD, step, 1280, 720, 0.2, overlap=0, max_gap=0.2)
+    centres = []
+    for p in stops:
+        v = View(step, 1280, 720, p.pan, p.tilt)
+        assert len(local_windows(v, BOARD, 144, 48)) <= 9
+        centres += [v.to_angle(x, y) for x, y in local_windows(v, BOARD, 144, 48)]
+    tp, _ = tile_from_step(step, 1280, 720, 0.2)
+    half = tp / 2
+    worst = 0.0
+    for pan in np.linspace(BOARD[0][0] + half, BOARD[1][0] - half, 40):
+        for tilt in np.linspace(BOARD[2][1] + half, BOARD[0][1] - half, 30):
+            worst = max(worst, min(math.hypot(pan - a, tilt - b) for a, b in centres))
+    assert worst <= tp / 3                       # stride 1/3 square -> at most ~0.24 off-centre
+
+
+def test_wide_mode_still_works(rig):
+    cfg, tmp = rig
+    bs.cmd_calibrate_step(build_parser().parse_args(["calibrate-step"]), cfg)
+    out = tmp / "wide"
+    args = build_parser().parse_args(["board-scan", "--wide", "--hef", str(tmp / "m.hef"),
+                                      "--out", str(out), "--threshold", "0.7", "--no-preview"])
+    assert bs.cmd_board_scan(args, cfg) == 0
+    saved = [c for c in csv.DictReader((out / "candidates.csv").open()) if c["action"] == "saved"]
+    assert len(saved) == 1
+    assert json.loads((out / "run.json").read_text())["mode"] == "wide+confirm"
+
+
+def test_scan_mode_walks_the_grid(rig):
+    cfg, tmp = rig
+    bs.cmd_calibrate_step(build_parser().parse_args(["calibrate-step"]), cfg)
+    out = tmp / "scan"
+    args = build_parser().parse_args(["board-scan", "--hef", str(tmp / "m.hef"), "--out", str(out),
+                                      "--no-preview"])
+    assert bs.cmd_board_scan(args, cfg) == 0
+    run = json.loads((out / "run.json").read_text())
+    assert run["mode"] == "scan+revisit" and len(run["find_poses"]) > 10
+    stops = {r["find_pose"] for r in csv.DictReader((out / "windows.csv").open())}
+    assert len(stops) == len(run["find_poses"])  # windows scored at every stop
