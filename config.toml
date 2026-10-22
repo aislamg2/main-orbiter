@@ -31,7 +31,7 @@ step_deg = 1             # interpolation step
 settle_s = 0.3           # wait after a move before capturing (lets vibration die out)
 
 [camera]
-rotate_180 = true        # camera is mounted upside down - flips preview and captured photos
+rotate_180 = false        # camera is mounted upside down - flips preview and captured photos
 preview_width = 1280     # live preview size (find_bounds.py --preview)
 preview_height = 720
 preview_quality = 70     # JPEG quality of the preview stream, 1-100
