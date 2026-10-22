@@ -209,7 +209,9 @@ pantilt board-scan --crop 0.2 --trace-edges   # just the 4 outermost points
 During `--trace`, each red box should start where the previous one ended. The
 grid uses the fewest squares that cover the board. They butt together with no
 overlap, and any leftover space is spread evenly as a thin sliver between
-squares, so there's never a gap and never a square off the board. During
+squares, so there's never a gap and never a square off the board. When the
+leftover is tiny (`max_gap`), it drops that row or column instead and leaves a
+thin unscanned strip at the edges. During
 `--trace-edges`, the box should reach the board edge but stay on it.
 
 **4. Scan.**
@@ -240,6 +242,7 @@ How it avoids blur and duplicate photos (all set in `[sweep]` in `config.toml`):
 | `cooldown_s` | Minimum seconds between photos (0 = off, since squares no longer overlap) |
 | `max_photos` | Hard cap per run |
 | `overlap` | Minimum share between neighbouring squares (0 = edge to edge; try 0.2 if craters on a boundary get missed) |
+| `max_gap` | If one row or column fewer would leave at most this much of a square unscanned (split between both edges), use one fewer. Stops a board 3.15 squares tall getting 4 heavily overlapping rows. 0 = always cover every millimetre |
 | `hfov_deg` | Lens field of view, only used until `calibrate-step` has run |
 
 If the CSV shows a lot of `still = 0`, slow down (`speed_dps`) or raise

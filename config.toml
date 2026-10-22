@@ -61,6 +61,7 @@ corners_file   = "data/board_corners.json"  # written by `pantilt teach`
 step_file      = "data/board_step.json"     # written by `pantilt calibrate-step`
 hfov_deg       = 67.0     # lens estimate (IMX708 75 deg diagonal), only until calibrate-step runs
 overlap        = 0.0      # 0 = squares butt together; leftover space is spread as a thin sliver
+max_gap        = 0.2      # if dropping a row/column leaves <= 0.2 of a square unscanned at the edges, drop it (0 = never)
 target         = "crater" # class that triggers a photo
 threshold      = 0.6      # its probability needed for a photo (--threshold)
 cooldown_tiles = 0.5      # no photo within half a square of one already taken (stops repeats on later passes)

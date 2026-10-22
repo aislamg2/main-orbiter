@@ -107,6 +107,7 @@ class SweepConfig:
     step_file: str = "data/board_step.json"  # from `pantilt calibrate-step`
     hfov_deg: float = 67.0        # lens estimate, used until calibrate-step has run
     overlap: float = 0.0          # minimum share between neighbouring crop squares
+    max_gap: float = 0.2          # unscanned edge (in squares) allowed to save a row/column
     target: str = "crater"        # class that triggers a photo
     threshold: float = 0.6        # probability of `target` that counts as a detection
     cooldown_tiles: float = 0.5   # no new photo within this many crop widths of a saved one
@@ -122,6 +123,8 @@ class SweepConfig:
             raise ValueError("hfov_deg must be in (0, 180)")
         if not 0 <= self.overlap < 1:
             raise ValueError("overlap must be in [0, 1)")
+        if not 0 <= self.max_gap < 1:
+            raise ValueError("max_gap must be in [0, 1)")
         if not 0 <= self.threshold <= 1:
             raise ValueError("threshold must be in [0, 1]")
         if self.speed_dps <= 0:

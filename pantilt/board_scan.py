@@ -104,23 +104,33 @@ def tile_deg(hfov_deg: float, frame_w: int, frame_h: int, crop: float) -> float:
     return math.degrees(2 * math.atan(side_px / 2 / focal_px))
 
 
-def _fractions(length_tiles: float, overlap: float) -> list[float]:
+def _fractions(length_tiles: float, overlap: float, max_gap: float = 0.0) -> list[float]:
     """Positions 0..1 along an edge, inset half a tile from each end.
 
     Uses the fewest tiles that cover the edge with at least `overlap` between
     neighbours. Whatever is left over is spread evenly, so with overlap 0 the
     tiles butt together or share a sliver - never a gap, never off the end.
+
+    Exception: if one tile fewer would leave at most `max_gap` tiles uncovered
+    (split between both ends), use that instead. An edge 3.15 tiles long then
+    gets 3 tiles butted together rather than 4 overlapping by 28%.
     """
     if length_tiles <= 1:
         return [0.5]
+    step = 1 - overlap
     # The epsilon keeps an edge of exactly 3.0 tiles at 3 tiles, not 4.
-    n = math.ceil((length_tiles - 1) / (1 - overlap) - 1e-6) + 1
+    n = math.ceil((length_tiles - 1) / step - 1e-6) + 1
+    fewer = n - 1
+    leftover = length_tiles - (1 + (fewer - 1) * step)
+    if 0 <= leftover <= max_gap + 1e-9:
+        first = leftover / 2 + 0.5  # centred, gap split between the two ends
+        return [(first + i * step) / length_tiles for i in range(fewer)]
     inset = 0.5 / length_tiles
     return [inset + (1 - 2 * inset) * i / (n - 1) for i in range(n)]
 
 
 def plan(corners: list[Corner], tile: float | Tile, overlap: float,
-         serpentine: bool = True) -> list[Pose]:
+         serpentine: bool = True, max_gap: float = 0.0) -> list[Pose]:
     """Grid of poses covering the board, every crop square fully on the board.
 
     tile is the square's size in servo degrees, either one number or
@@ -139,8 +149,8 @@ def plan(corners: list[Corner], tile: float | Tile, overlap: float,
     def dist(a, b):
         return math.hypot(a[0] - b[0], a[1] - b[1])
 
-    us = _fractions(max(dist(p0, p1), dist(p3, p2)), overlap)
-    vs = _fractions(max(dist(p0, p3), dist(p1, p2)), overlap)
+    us = _fractions(max(dist(p0, p1), dist(p3, p2)), overlap, max_gap)
+    vs = _fractions(max(dist(p0, p3), dist(p1, p2)), overlap, max_gap)
 
     poses = []
     for r, v in enumerate(vs):
@@ -521,7 +531,7 @@ def _plan_for(args, cfg: Config):
         est = tile_deg(s.hfov_deg, w, h, crop)
         tile = (est, est)
         source = "ESTIMATED - run `pantilt calibrate-step` for exact edge-to-edge squares"
-    poses = plan(corners, tile, s.overlap, serpentine=not args.one_way)
+    poses = plan(corners, tile, s.overlap, serpentine=not args.one_way, max_gap=s.max_gap)
     return crop, corners, tile, source, poses
 
 
@@ -533,7 +543,8 @@ def _describe(cfg, crop, tile, source, poses, threshold, cooldown_deg, cooldown_
     return "\n".join([
         f"crop         {crop:.2f} of the frame -> {tile[0]:.2f} x {tile[1]:.2f} deg (pan x tilt)",
         f"step         {source}",
-        f"grid         {cols} cols x {rows} rows = {len(poses)} poses  (overlap {cfg.sweep.overlap:.0%})",
+        f"grid         {cols} cols x {rows} rows = {len(poses)} poses  (overlap {cfg.sweep.overlap:.0%}, "
+        f"max_gap {cfg.sweep.max_gap:.0%} of a square)",
         f"pan range    {min(pans):.1f} .. {max(pans):.1f} deg",
         f"tilt range   {min(tilts):.1f} .. {max(tilts):.1f} deg",
         f"trigger      {cfg.sweep.target} >= {threshold:.2f}",

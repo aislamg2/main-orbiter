@@ -369,3 +369,34 @@ def test_trace_visits_every_pose(tmp_path, monkeypatch, capsys):
     args = build_parser().parse_args(["board-scan", "--crop", "0.2", "--corners", str(corners), "--trace-edges"])
     assert bs.cmd_board_scan(args, cfg) == 0
     assert capsys.readouterr().out.count(" pan ") == 4
+
+
+def test_max_gap_drops_a_row_when_the_leftover_is_tiny():
+    # Your board: 4.64 x 3.15 squares of 8.55 x 8.56 deg.
+    tp, tt = 8.55, 8.56
+    w, h = 4.64 * tp, 3.15 * tt
+    board = [(100 - w / 2, 90 + h / 2), (100 + w / 2, 90 + h / 2),
+             (100 + w / 2, 90 - h / 2), (100 - w / 2, 90 - h / 2)]
+    assert len(plan(board, (tp, tt), 0)) == 20                # cover everything: 5 x 4
+    poses = plan(board, (tp, tt), 0, max_gap=0.2)
+    tilts = sorted({round(p.tilt, 6) for p in poses})
+    assert len(poses) == 15 and len(tilts) == 3              # 5 x 3
+    assert all(d == pytest.approx(tt) for d in _spacings(tilts))   # rows butt together
+    edge_gap = (tilts[0] - tt / 2) - (90 - h / 2)
+    assert edge_gap == pytest.approx(0.075 * tt)             # 0.15 split over both edges
+    assert edge_gap == pytest.approx((90 + h / 2) - (tilts[-1] + tt / 2))
+    # Pan would leave 0.64 of a square - too much, so it keeps 5 columns.
+    assert len({round(p.pan, 6) for p in poses}) == 5
+
+
+def test_max_gap_never_leaves_more_than_allowed():
+    from pantilt.board_scan import _fractions
+
+    for length in np.arange(1.0, 6.0, 0.01):
+        for gap in (0.0, 0.2, 0.5):
+            fs = _fractions(length, 0.0, gap)
+            centres = [f * length for f in fs]
+            covered = (centres[-1] + 0.5) - (centres[0] - 0.5)
+            assert centres[0] >= 0.5 - 1e-9 and centres[-1] <= length - 0.5 + 1e-9  # on the board
+            assert length - covered <= gap + 1e-6                                   # gap respected
+            assert all(b - a <= 1 + 1e-9 for a, b in zip(centres, centres[1:]))     # no inner gaps
