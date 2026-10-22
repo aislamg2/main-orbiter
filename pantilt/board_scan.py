@@ -90,31 +90,48 @@ class Pose:
     tilt: float
 
 
+Tile = tuple[float, float]  # (pan, tilt) servo degrees covered by one crop square
+
+
 def tile_deg(hfov_deg: float, frame_w: int, frame_h: int, crop: float) -> float:
-    """Angular size of the square the model classifies (same crop as preprocess())."""
+    """Estimated angular size of the square the model classifies, from the lens FOV.
+
+    Only an estimate: it assumes one servo degree is one real degree. Use
+    `pantilt calibrate-step` for the measured value.
+    """
     side_px = max(1, int(min(frame_w, frame_h) * crop))
     focal_px = (frame_w / 2) / math.tan(math.radians(hfov_deg) / 2)
     return math.degrees(2 * math.atan(side_px / 2 / focal_px))
 
 
 def _fractions(length_tiles: float, overlap: float) -> list[float]:
-    """Positions 0..1 along an edge, inset half a tile from each end."""
+    """Positions 0..1 along an edge, inset half a tile from each end.
+
+    Uses the fewest tiles that cover the edge with at least `overlap` between
+    neighbours. Whatever is left over is spread evenly, so with overlap 0 the
+    tiles butt together or share a sliver - never a gap, never off the end.
+    """
     if length_tiles <= 1:
         return [0.5]
-    n = math.ceil((length_tiles - 1) / (1 - overlap)) + 1
+    # The epsilon keeps an edge of exactly 3.0 tiles at 3 tiles, not 4.
+    n = math.ceil((length_tiles - 1) / (1 - overlap) - 1e-6) + 1
     inset = 0.5 / length_tiles
     return [inset + (1 - 2 * inset) * i / (n - 1) for i in range(n)]
 
 
-def plan(corners: list[Corner], tile: float, overlap: float, serpentine: bool = True) -> list[Pose]:
+def plan(corners: list[Corner], tile: float | Tile, overlap: float,
+         serpentine: bool = True) -> list[Pose]:
     """Grid of poses covering the board, every crop square fully on the board.
 
-    Interpolates bilinearly between the taught corners, so a board seen at an
-    angle (a trapezoid in pan/tilt) is still covered edge to edge. Rows run
-    along whichever pair of edges is closer to the pan direction.
+    tile is the square's size in servo degrees, either one number or
+    (pan, tilt) when the axes were calibrated separately. Interpolates
+    bilinearly between the taught corners, so a board seen at an angle (a
+    trapezoid in pan/tilt) is still covered edge to edge. Rows run along
+    whichever pair of edges is closer to the pan direction.
     """
     check_corners(corners)
-    c = list(corners)
+    tp, tt = (tile, tile) if isinstance(tile, (int, float)) else tile
+    c = [(p / tp, t / tt) for p, t in corners]  # work in tile units
     if abs(c[1][0] - c[0][0]) < abs(c[1][1] - c[0][1]):
         c = c[1:] + c[:1]  # make c0 -> c1 the more pan-like edge
     (p0, p1, p2, p3) = c
@@ -122,8 +139,8 @@ def plan(corners: list[Corner], tile: float, overlap: float, serpentine: bool = 
     def dist(a, b):
         return math.hypot(a[0] - b[0], a[1] - b[1])
 
-    us = _fractions(max(dist(p0, p1), dist(p3, p2)) / tile, overlap)
-    vs = _fractions(max(dist(p0, p3), dist(p1, p2)) / tile, overlap)
+    us = _fractions(max(dist(p0, p1), dist(p3, p2)), overlap)
+    vs = _fractions(max(dist(p0, p3), dist(p1, p2)), overlap)
 
     poses = []
     for r, v in enumerate(vs):
@@ -135,7 +152,7 @@ def plan(corners: list[Corner], tile: float, overlap: float, serpentine: bool = 
                 (1 - v) * ((1 - u) * p0[k] + u * p1[k]) + v * ((1 - u) * p3[k] + u * p2[k])
                 for k in (0, 1)
             )
-            poses.append(Pose(len(poses), r, col, pan, tilt))
+            poses.append(Pose(len(poses), r, col, pan * tp, tilt * tt))
     return poses
 
 
@@ -215,6 +232,70 @@ def center_crop(frame, crop: float):
     side = max(1, int(min(h, w) * crop))
     top, left = (h - side) // 2, (w - side) // 2
     return frame[top:top + side, left:left + side, :3]
+
+
+def image_shift(a, b) -> tuple[float, float, float]:
+    """How far the scene moved between two frames: (dy, dx) pixels, plus match quality.
+
+    Phase correlation: robust to brightness changes and needs only texture,
+    which a printed map has plenty of. Quality is the correlation peak height,
+    roughly 0.05-0.5 for a good match and near 0 for a blank scene.
+    """
+    import numpy as np
+
+    def prep(f):
+        g = f[:, :, :3].astype(np.float32).mean(axis=2)
+        g = g[: g.shape[0] // 2 * 2, : g.shape[1] // 2 * 2]
+        g = g.reshape(g.shape[0] // 2, 2, g.shape[1] // 2, 2).mean(axis=(1, 3))  # half size
+        g -= g.mean()
+        return g * np.outer(np.hanning(g.shape[0]), np.hanning(g.shape[1]))
+
+    ga, gb = prep(a), prep(b)
+    cross = np.fft.fft2(ga) * np.conj(np.fft.fft2(gb))
+    r = np.fft.ifft2(cross / (np.abs(cross) + 1e-9)).real
+    h, w = r.shape
+    y, x = np.unravel_index(int(np.argmax(r)), r.shape)
+
+    def refine(m1, c, p1):  # parabola through the peak and its neighbours
+        d = m1 - 2 * c + p1
+        return 0.0 if d == 0 else 0.5 * (m1 - p1) / d
+
+    dy = y + refine(r[(y - 1) % h, x], r[y, x], r[(y + 1) % h, x])
+    dx = x + refine(r[y, (x - 1) % w], r[y, x], r[y, (x + 1) % w])
+    if dy > h / 2:
+        dy -= h
+    if dx > w / 2:
+        dx -= w
+    return 2 * float(dy), 2 * float(dx), float(r[y, x])
+
+
+def save_step(path: str | Path, frame_w: int, frame_h: int,
+              pan_px_per_deg: float, tilt_px_per_deg: float) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps({
+        "measured": datetime.now().isoformat(timespec="seconds"),
+        "frame": [frame_w, frame_h],
+        "pan_px_per_deg": round(pan_px_per_deg, 3),
+        "tilt_px_per_deg": round(tilt_px_per_deg, 3),
+        "note": "image shift per servo degree, from `pantilt calibrate-step`",
+    }, indent=2))
+
+
+def load_step(path: str | Path) -> dict:
+    data = json.loads(Path(path).read_text())
+    for k in ("pan_px_per_deg", "tilt_px_per_deg"):
+        if not data[k] > 0:
+            raise ValueError(f"{k} must be positive")
+    return data
+
+
+def tile_from_step(step: dict, frame_w: int, frame_h: int, crop: float) -> Tile:
+    """Servo degrees per crop square on each axis, from a calibration."""
+    scale = frame_w / step["frame"][0]  # calibration may have used another preview size
+    side_px = max(1, int(min(frame_w, frame_h) * crop))
+    return (side_px / (step["pan_px_per_deg"] * scale),
+            side_px / (step["tilt_px_per_deg"] * scale))
 
 
 def _save_photo(path: Path, rgb, quality: int = 92):
@@ -342,23 +423,116 @@ def cmd_teach(args, cfg: Config) -> int:
     return 1
 
 
+# -- calibrate-step ------------------------------------------------------------
+def cmd_calibrate_step(args, cfg: Config) -> int:
+    """Measure how many pixels the image moves per servo degree, on each axis.
+
+    Moves a known amount, measures the image shift, repeats. Each move is
+    approached from the same side so gear backlash doesn't creep in. Any
+    textured patch works; the board centre is used if corners are taught.
+    """
+    import statistics
+
+    from .stream import CameraStream
+
+    s = cfg.sweep
+    delta, reps = args.delta, args.reps
+    try:
+        corners = load_corners(s.corners_file)
+        base = (sum(p for p, _ in corners) / 4, sum(t for _, t in corners) / 4)
+    except (FileNotFoundError, ValueError, KeyError):
+        base = (cfg.pan.center, cfg.tilt.center)
+    margin = delta / 2 + 2
+    for name, b in zip(("pan", "tilt"), base):
+        lim = getattr(cfg, name)
+        if not (lim.min_angle <= b - margin and b + margin <= lim.max_angle):
+            print(f"{name} {b:.1f} is too close to its limit for a {delta} deg test move",
+                  file=sys.stderr)
+            return 1
+
+    progress = {"mode": "calibrate step", "axis": "-", "rep": "-"}
+    stream = CameraStream(cfg.camera, status=lambda: progress)
+    print(f"live view: {stream.start()}")
+    print(f"measuring at pan {base[0]:.1f}, tilt {base[1]:.1f} with {delta} deg moves; "
+          "keep the board still and well lit\n")
+    grab = lambda: stream.picam2.capture_array("main")  # noqa: E731
+    results = {}
+    try:
+        with PanTilt(cfg) as pt:
+            def go(**target):
+                pt.move_to(**target, speed_dps=s.speed_dps, ease=True)
+                time.sleep(max(s.settle_s, 0.6))
+                wait_still(grab, s.still_diff, s.settle_max_s)
+
+            go(pan=base[0], tilt=base[1])
+            time.sleep(1)  # let auto-exposure settle
+            for axis, b in (("pan", base[0]), ("tilt", base[1])):
+                progress["axis"] = axis
+                vals, quals = [], []
+                for i in range(reps):
+                    progress["rep"] = f"{i + 1}/{reps}"
+                    go(**{axis: b - margin})          # approach from below every time
+                    go(**{axis: b - delta / 2})
+                    a = grab()
+                    go(**{axis: b + delta / 2})
+                    dy, dx, q = image_shift(a, grab())
+                    vals.append(math.hypot(dy, dx) / delta)
+                    quals.append(q)
+                    print(f"  {axis} {i + 1}/{reps}: {math.hypot(dy, dx):6.1f} px over {delta} deg "
+                          f"= {vals[-1]:6.2f} px/deg   (match {q:.2f})")
+                go(**{axis: b})
+                results[axis] = (statistics.median(vals), vals, min(quals))
+            pt.center()
+        h, w = grab().shape[:2]
+    finally:
+        stream.stop()
+
+    for axis, (med, vals, q) in results.items():
+        spread = (max(vals) - min(vals)) / med if med else 1
+        if q < 0.03:
+            print(f"warning: {axis} match is weak ({q:.2f}) - aim at a textured part of the "
+                  "board and add light", file=sys.stderr)
+        if spread > 0.05:
+            print(f"warning: {axis} repeats disagree by {spread:.0%} - check nothing moved, "
+                  "or re-run with more --reps", file=sys.stderr)
+
+    out = Path(args.file or s.step_file)
+    save_step(out, w, h, results["pan"][0], results["tilt"][0])
+    crop = args.crop if args.crop is not None else cfg.model.crop
+    tp, tt = tile_from_step(load_step(out), w, h, crop)
+    est = tile_deg(s.hfov_deg, w, h, crop)
+    print(f"\nsaved {out}")
+    print(f"at crop {crop:.2f} one square is {tp:.2f} deg of pan x {tt:.2f} deg of tilt "
+          f"(the lens estimate said {est:.2f})")
+    print("board-scan uses this from now on. Re-run if you change the camera or servos.")
+    return 0
+
+
 # -- board-scan ----------------------------------------------------------------
 def _plan_for(args, cfg: Config):
     s = cfg.sweep
     crop = args.crop if args.crop is not None else cfg.model.crop
     corners = load_corners(args.corners or s.corners_file)
-    tile = tile_deg(s.hfov_deg, cfg.camera.preview_width, cfg.camera.preview_height, crop)
+    w, h = cfg.camera.preview_width, cfg.camera.preview_height
+    try:
+        tile = tile_from_step(load_step(s.step_file), w, h, crop)
+        source = "calibrated"
+    except FileNotFoundError:
+        est = tile_deg(s.hfov_deg, w, h, crop)
+        tile = (est, est)
+        source = "ESTIMATED - run `pantilt calibrate-step` for exact edge-to-edge squares"
     poses = plan(corners, tile, s.overlap, serpentine=not args.one_way)
-    return crop, corners, tile, poses
+    return crop, corners, tile, source, poses
 
 
-def _describe(cfg, crop, tile, poses, threshold, cooldown_deg, cooldown_s, speed) -> str:
+def _describe(cfg, crop, tile, source, poses, threshold, cooldown_deg, cooldown_s, speed) -> str:
     rows = max(p.row for p in poses) + 1
     cols = max(p.col for p in poses) + 1
     pans = [p.pan for p in poses]
     tilts = [p.tilt for p in poses]
     return "\n".join([
-        f"crop         {crop:.2f} of the frame -> {tile:.1f} deg square on the board",
+        f"crop         {crop:.2f} of the frame -> {tile[0]:.2f} x {tile[1]:.2f} deg (pan x tilt)",
+        f"step         {source}",
         f"grid         {cols} cols x {rows} rows = {len(poses)} poses  (overlap {cfg.sweep.overlap:.0%})",
         f"pan range    {min(pans):.1f} .. {max(pans):.1f} deg",
         f"tilt range   {min(tilts):.1f} .. {max(tilts):.1f} deg",
@@ -376,7 +550,7 @@ def cmd_board_scan(args, cfg: Config) -> int:
         print(f"[sweep] target must be one of: {', '.join(CLASS_NAMES)}", file=sys.stderr)
         return 2
     try:
-        crop, corners, tile, poses = _plan_for(args, cfg)
+        crop, corners, tile, source, poses = _plan_for(args, cfg)
     except FileNotFoundError:
         print(f"no board corners at {args.corners or s.corners_file} - run `pantilt teach` first",
               file=sys.stderr)
@@ -386,11 +560,11 @@ def cmd_board_scan(args, cfg: Config) -> int:
         return 1
 
     threshold = args.threshold if args.threshold is not None else s.threshold
-    cooldown_deg = (args.cooldown_tiles if args.cooldown_tiles is not None else s.cooldown_tiles) * tile
+    cooldown_deg = (args.cooldown_tiles if args.cooldown_tiles is not None else s.cooldown_tiles) * min(tile)
     cooldown_s = args.cooldown_s if args.cooldown_s is not None else s.cooldown_s
     speed = args.speed or s.speed_dps
 
-    print(_describe(cfg, crop, tile, poses, threshold, cooldown_deg, cooldown_s, speed))
+    print(_describe(cfg, crop, tile, source, poses, threshold, cooldown_deg, cooldown_s, speed))
     print()
 
     if args.dry_run:
@@ -399,37 +573,52 @@ def cmd_board_scan(args, cfg: Config) -> int:
         if len(poses) > 10:
             print(f"  ... {len(poses) - 10} more")
         return 0
-    if args.trace:
-        return _trace(cfg, crop, poses, speed)
-    return _scan(args, cfg, crop, corners, tile, poses, threshold, cooldown_deg, cooldown_s, speed)
+    if args.trace or args.trace_edges:
+        hold = args.hold if args.hold is not None else (3.0 if args.trace_edges else 1.0)
+        return _trace(cfg, crop, poses, speed, args.trace_edges, hold)
+    return _scan(args, cfg, crop, corners, tile, source, poses, threshold, cooldown_deg,
+                 cooldown_s, speed)
 
 
-def _trace(cfg: Config, crop: float, poses: list[Pose], speed: float) -> int:
-    """Visit the outermost grid points so you can check the red box stays on the board."""
+def _trace(cfg: Config, crop: float, poses: list[Pose], speed: float, edges_only: bool,
+           hold_s: float) -> int:
+    """Walk the grid without classifying, so the coverage can be checked by eye.
+
+    Full trace: every pose in scan order - each red box should start where the
+    last one ended, with no gaps and no big overlaps. Edges only: the four
+    outermost poses, to check the boxes reach the board edge without leaving it.
+    """
     from .stream import CameraStream
 
-    where = {"at": "-"}
-    stream = CameraStream(cfg.camera, status=lambda: {"mode": "trace", "at": where["at"],
-                                                      "crop": f"{crop:.2f}"})
+    s = cfg.sweep
+    stops = outer_poses(poses) if edges_only else poses
+    where = {"mode": "trace", "at": "-"}
+    stream = CameraStream(cfg.camera, status=lambda: {**where, "crop": f"{crop:.2f}"})
     print(f"live view: {stream.start()}")
-    print("Watch the red box at each stop: it should touch the board edge but stay on the board.")
+    if edges_only:
+        print("At each stop the red box should touch the board edge but stay on the board.")
+    else:
+        print("Each red box should begin where the previous one ended: no gaps, no big overlaps.")
+    grab = lambda: stream.picam2.capture_array("main")  # noqa: E731
     try:
         with PanTilt(cfg) as pt:
             pt.center(smooth=False)
-            for p in outer_poses(poses):
-                where["at"] = f"r{p.row} c{p.col}"
+            for i, p in enumerate(stops, 1):
+                where["at"] = f"{i}/{len(stops)}  r{p.row} c{p.col}"
                 pt.move_to(pan=p.pan, tilt=p.tilt, speed_dps=speed, ease=True)
-                print(f"  r{p.row} c{p.col}  pan {p.pan:6.2f}  tilt {p.tilt:6.2f}")
-                time.sleep(3)
+                time.sleep(s.settle_s)
+                wait_still(grab, s.still_diff, s.settle_max_s - s.settle_s)
+                print(f"  {i:>3}/{len(stops)}  r{p.row} c{p.col}  pan {p.pan:6.2f}  tilt {p.tilt:6.2f}")
+                time.sleep(hold_s)
             pt.center()
     finally:
         stream.stop()
-    print("If the box hung off the board, re-teach with the crosshair a little further in, "
-          "or lower --crop.")
+    print("Gaps between boxes: re-run `pantilt calibrate-step`. Boxes off the board: "
+          "re-teach with the crosshair a little further in.")
     return 0
 
 
-def _scan(args, cfg, crop, corners, tile, poses, threshold, cooldown_deg, cooldown_s,
+def _scan(args, cfg, crop, corners, tile, source, poses, threshold, cooldown_deg, cooldown_s,
           speed) -> int:
     from .classify import CLASS_NAMES, HailoClassifier, LiveClassifier
     from .cli import _Camera, _thumb_source
@@ -471,7 +660,7 @@ def _scan(args, cfg, crop, corners, tile, poses, threshold, cooldown_deg, cooldo
 
     (run / "run.json").write_text(json.dumps({
         "started": datetime.now().isoformat(timespec="seconds"),
-        "corners": corners, "crop": crop, "tile_deg": tile, "poses": len(poses),
+        "corners": corners, "crop": crop, "tile_deg": list(tile), "step": source, "poses": len(poses),
         "target": s.target, "threshold": threshold,
         "cooldown_deg": cooldown_deg, "cooldown_s": cooldown_s,
         "speed_dps": speed, "settle_s": s.settle_s, "settle_max_s": s.settle_max_s,

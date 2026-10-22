@@ -104,12 +104,13 @@ class SweepConfig:
     """`pantilt board-scan`: stop-and-go scan inside corners taught with `pantilt teach`."""
 
     corners_file: str = "data/board_corners.json"
-    hfov_deg: float = 67.0        # horizontal field of view (IMX708 75 deg diagonal lens)
-    overlap: float = 0.25         # fraction of the crop square shared with each neighbour
+    step_file: str = "data/board_step.json"  # from `pantilt calibrate-step`
+    hfov_deg: float = 67.0        # lens estimate, used until calibrate-step has run
+    overlap: float = 0.0          # minimum share between neighbouring crop squares
     target: str = "crater"        # class that triggers a photo
     threshold: float = 0.6        # probability of `target` that counts as a detection
-    cooldown_tiles: float = 1.2   # no new photo within this many crop widths of a saved one
-    cooldown_s: float = 3.0       # and at least this long between any two photos
+    cooldown_tiles: float = 0.5   # no new photo within this many crop widths of a saved one
+    cooldown_s: float = 0.0       # and at least this long between any two photos
     max_photos: int = 100         # stop saving after this many per run (0 = no limit)
     speed_dps: float = 30         # slower than [motion] so the mount shakes less
     settle_s: float = 0.4         # always wait this long after a move

@@ -14,7 +14,7 @@ from pathlib import Path
 from .config import load_config
 from .controller import PanTilt
 from .scan import raster
-from .board_scan import cmd_board_scan, cmd_teach
+from .board_scan import cmd_board_scan, cmd_calibrate_step, cmd_teach
 from .survey import cmd_measure_k, cmd_survey
 
 
@@ -518,6 +518,13 @@ def build_parser() -> argparse.ArgumentParser:
     te.add_argument("--file", help="where to save (default: [sweep] corners_file)")
     te.set_defaults(func=cmd_teach)
 
+    cs = sub.add_parser("calibrate-step", help="measure the servo step that moves the image one crop square")
+    cs.add_argument("--crop", type=float, help="crop to report the result for (default: [model] crop)")
+    cs.add_argument("--delta", type=float, default=5.0, help="test move in degrees (default 5)")
+    cs.add_argument("--reps", type=int, default=3, help="measurements per axis (default 3)")
+    cs.add_argument("--file", help="where to save (default: [sweep] step_file)")
+    cs.set_defaults(func=cmd_calibrate_step)
+
     bs = sub.add_parser("board-scan", help="stop-and-go scan of the taught board, photographing craters")
     bs.add_argument("--crop", type=float, help="fraction of the frame to classify (default: [model] crop)")
     bs.add_argument("--threshold", type=float, help="target probability that triggers a photo (default: [sweep] threshold)")
@@ -528,7 +535,9 @@ def build_parser() -> argparse.ArgumentParser:
     bs.add_argument("--passes", type=int, default=1, help="times over the board (0 = until Ctrl+C)")
     bs.add_argument("--one-way", action="store_true", help="every row left to right instead of serpentine")
     bs.add_argument("--dry-run", action="store_true", help="print the grid, move nothing")
-    bs.add_argument("--trace", action="store_true", help="visit the outer grid points to check the crop stays on the board")
+    bs.add_argument("--trace", action="store_true", help="walk every grid point without classifying, to check coverage")
+    bs.add_argument("--trace-edges", action="store_true", help="visit only the 4 outermost grid points, to check the board edge")
+    bs.add_argument("--hold", type=float, help="seconds to pause at each trace stop (default 1, or 3 with --trace-edges)")
     bs.add_argument("--corners", help="corners file (default: [sweep] corners_file)")
     bs.add_argument("--hef", help="model override (default: [model] hef_path)")
     bs.add_argument("--out", metavar="DIR", help="run directory (default: data/runs/board-<timestamp>)")

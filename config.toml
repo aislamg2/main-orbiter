@@ -58,12 +58,13 @@ tilt_sign       = 1.0     # with rotate_180 on, expect at least one to be -1.0
 
 [sweep]                   # pantilt teach + pantilt board-scan
 corners_file   = "data/board_corners.json"  # written by `pantilt teach`
-hfov_deg       = 67.0     # Arducam IMX708 75 deg diagonal lens -> ~67 deg across
-overlap        = 0.25     # crop squares share this much with each neighbour
+step_file      = "data/board_step.json"     # written by `pantilt calibrate-step`
+hfov_deg       = 67.0     # lens estimate (IMX708 75 deg diagonal), only until calibrate-step runs
+overlap        = 0.0      # 0 = squares butt together; leftover space is spread as a thin sliver
 target         = "crater" # class that triggers a photo
 threshold      = 0.6      # its probability needed for a photo (--threshold)
-cooldown_tiles = 1.2      # no photo within 1.2 crop widths of one already taken
-cooldown_s     = 3.0      # and at least this many seconds between photos
+cooldown_tiles = 0.5      # no photo within half a square of one already taken (stops repeats on later passes)
+cooldown_s     = 0.0      # minimum seconds between photos (0 = off; squares don't overlap anyway)
 max_photos     = 100      # hard cap per run (0 = no limit)
 speed_dps      = 30       # move speed between poses - slower shakes less
 settle_s       = 0.4      # always wait this long after each move

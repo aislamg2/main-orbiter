@@ -187,17 +187,32 @@ direction. Press **m** at each corner, **g** to re-visit them, **u** to undo,
 and **s** to save to `data/board_corners.json`. The scan never leaves this shape,
 so nothing off the board gets photographed.
 
-**2. Check the plan, then check it on the hardware.**
+**2. Measure the step (once, and again if you change the camera, lens or servos).**
 
 ```bash
-pantilt board-scan --crop 0.2 --dry-run   # grid size and angles, moves nothing
-pantilt board-scan --crop 0.2 --trace     # visits the 4 outermost grid points
+pantilt calibrate-step --crop 0.2
 ```
 
-During `--trace`, watch the red box in the live view. It should reach the board
-edge but never hang off it.
+The camera moves 5° at a time on each axis and measures how far the image
+shifts, so the grid uses the real size of one crop square in servo degrees.
+Until you run this, the step is estimated from the lens field of view, and
+there may be thin gaps or overlaps between squares.
 
-**3. Scan.**
+**3. Check the plan, then check it on the hardware.**
+
+```bash
+pantilt board-scan --crop 0.2 --dry-run       # grid size and angles, moves nothing
+pantilt board-scan --crop 0.2 --trace         # walks every grid point, no classifying
+pantilt board-scan --crop 0.2 --trace-edges   # just the 4 outermost points
+```
+
+During `--trace`, each red box should start where the previous one ended. The
+grid uses the fewest squares that cover the board. They butt together with no
+overlap, and any leftover space is spread evenly as a thin sliver between
+squares, so there's never a gap and never a square off the board. During
+`--trace-edges`, the box should reach the board edge but stay on it.
+
+**4. Scan.**
 
 ```bash
 pantilt board-scan --crop 0.2                       # one pass, threshold from config.toml
@@ -221,11 +236,11 @@ How it avoids blur and duplicate photos (all set in `[sweep]` in `config.toml`):
 | `speed_dps`, `settle_s` | Moves at 30°/s with eased starts and stops, then always waits 0.4 s |
 | `settle_max_s`, `still_diff` | Then keeps waiting until two frames in a row look the same (up to 2 s). `still` = 0 in the CSV means it gave up |
 | `threshold` | Crater probability needed for a photo (`--threshold`) |
-| `cooldown_tiles` | No new photo within 1.2 crop widths of one already saved, so the same crater seen from the next grid point isn't saved again |
-| `cooldown_s` | And at least 3 s between any two photos |
+| `cooldown_tiles` | No new photo within half a square of one already saved, which stops repeats of the same square on later `--passes` |
+| `cooldown_s` | Minimum seconds between photos (0 = off, since squares no longer overlap) |
 | `max_photos` | Hard cap per run |
-| `overlap` | How much neighbouring crop squares share (raise it if craters fall between them) |
-| `hfov_deg` | Lens field of view, used to space the grid to match `--crop` |
+| `overlap` | Minimum share between neighbouring squares (0 = edge to edge; try 0.2 if craters on a boundary get missed) |
+| `hfov_deg` | Lens field of view, only used until `calibrate-step` has run |
 
 If the CSV shows a lot of `still = 0`, slow down (`speed_dps`) or raise
 `settle_max_s`. If a still bracket never counts as still (each pose takes the
@@ -280,7 +295,7 @@ pantilt/
   scan.py        raster (serpentine) scan pattern
   stream.py      live camera preview as a web page (MJPEG)
   classify.py    Hailo-8 landmark classifier + live classification loop
-  board_scan.py  `teach` the board corners, `board-scan` it for craters
+  board_scan.py  `teach` corners, `calibrate-step`, `board-scan` for craters
   cli.py         `pantilt` command line
 config.toml      hardware and model settings
 models/          compiled Hailo model (.hef) for `pantilt live`

@@ -8,8 +8,8 @@ import pytest
 import pantilt.controller as controller
 from pantilt import Config, PanTilt, PCA9685, load_config
 from pantilt.board_scan import (
-    Cooldown, center_crop, check_corners, frame_diff, load_corners, outer_poses, plan,
-    save_corners, tile_deg, wait_still,
+    Cooldown, center_crop, check_corners, frame_diff, image_shift, load_corners, load_step,
+    outer_poses, plan, save_corners, save_step, tile_deg, tile_from_step, wait_still,
 )
 from pantilt.cli import build_parser
 
@@ -220,7 +220,7 @@ def test_full_scan_with_fake_hardware(tmp_path, monkeypatch):
     cfg = Config()
     args = build_parser().parse_args([
         "board-scan", "--crop", "0.2", "--corners", str(corners), "--hef", str(hef),
-        "--out", str(out), "--cooldown-s", "0", "--no-preview"])
+        "--out", str(out), "--cooldown-tiles", "1.2", "--no-preview"])
     assert bs.cmd_board_scan(args, cfg) == 0
 
     import csv
@@ -234,3 +234,138 @@ def test_full_scan_with_fake_hardware(tmp_path, monkeypatch):
     assert {r["action"] for r in rows} <= {"saved", "near"}
     photos = sorted(p.name for p in (out / "photos").iterdir())
     assert len(photos) == 2 * len(saved)             # full frame + crop for each
+
+
+def _spacings(values):
+    xs = sorted(set(round(v, 6) for v in values))
+    return [b - a for a, b in zip(xs, xs[1:])]
+
+
+def test_zero_overlap_exact_fit_butts_squares_together():
+    # 60 x 40 deg board, 10 deg squares: exactly 6 x 4, centres 10 apart.
+    poses = plan(SQUARE, 10, overlap=0)
+    assert len(poses) == 24
+    assert all(d == pytest.approx(10) for d in _spacings(p.pan for p in poses))
+    assert all(d == pytest.approx(10) for d in _spacings(p.tilt for p in poses))
+
+
+def test_zero_overlap_leftover_is_spread_never_a_gap():
+    # 63 deg across with 10 deg squares: 7 squares (6 would leave a gap), evenly spaced.
+    board = [(60, 110), (123, 110), (123, 70), (60, 70)]
+    poses = plan(board, 10, overlap=0)
+    cols = {round(p.pan, 6) for p in poses}
+    assert len(cols) == 7
+    gaps = _spacings(p.pan for p in poses)
+    assert max(gaps) <= 10 + 1e-9 and max(gaps) - min(gaps) < 1e-5
+    assert min(cols) == pytest.approx(65) and max(cols) == pytest.approx(118)
+
+
+def test_per_axis_tile_sizes():
+    poses = plan(SQUARE, (10, 5), overlap=0)  # tilt squares half as tall in servo degrees
+    assert len({round(p.pan, 6) for p in poses}) == 6
+    assert len({round(p.tilt, 6) for p in poses}) == 8
+    assert min(p.tilt for p in poses) == pytest.approx(72.5)
+
+
+def test_image_shift_measures_known_move():
+    rng = np.random.default_rng(1)
+    big = np.kron(rng.integers(0, 256, (120, 200)), np.ones((8, 8)))
+    a = big[100:820, 200:1480][..., None].repeat(3, 2).astype(np.uint8)
+    b = big[100 + 12:820 + 12, 200 + 70:1480 + 70][..., None].repeat(3, 2).astype(np.uint8)
+    dy, dx, q = image_shift(a, b)
+    assert math.hypot(dy, dx) == pytest.approx(math.hypot(12, 70), abs=1.5)
+    assert q > 0.05
+    flat = np.full_like(a, 100)
+    assert image_shift(flat, flat)[2] < image_shift(a, b)[2]
+
+
+def test_step_file_round_trip_and_scaling(tmp_path):
+    f = tmp_path / "step.json"
+    save_step(f, 1280, 720, pan_px_per_deg=18.0, tilt_px_per_deg=16.0)
+    step = load_step(f)
+    tp, tt = tile_from_step(step, 1280, 720, 0.2)   # 144 px square
+    assert (tp, tt) == pytest.approx((8.0, 9.0))
+    # Preview doubled in size: same angles, the square has twice the pixels.
+    assert tile_from_step(step, 2560, 1440, 0.2) == pytest.approx((8.0, 9.0))
+
+
+def test_trace_and_calibrate_parse():
+    p = build_parser()
+    a = p.parse_args(["board-scan", "--trace"])
+    assert a.trace and not a.trace_edges and a.hold is None
+    assert p.parse_args(["board-scan", "--trace-edges", "--hold", "2"]).hold == 2
+    c = p.parse_args(["calibrate-step", "--crop", "0.2"])
+    assert c.func.__name__ == "cmd_calibrate_step" and c.delta == 5.0 and c.reps == 3
+
+
+def _fake_rig(monkeypatch, pan_ppd, tilt_ppd):
+    """Servos + a camera whose image slides over a texture as the servos move."""
+    import pantilt.board_scan as bs
+    import pantilt.stream as stream
+
+    monkeypatch.setattr(bs.time, "sleep", lambda s: None)
+    monkeypatch.setattr(controller.time, "sleep", lambda s: None)
+
+    class Bus:
+        def __init__(self): self.regs = {0x00: 0x11}
+        def write_byte_data(self, a, r, v): self.regs[r] = v
+        def read_byte_data(self, a, r): return self.regs.get(r, 0)
+        def write_i2c_block_data(self, a, r, d): pass
+        def close(self): pass
+
+    rig = {}
+    real_pantilt = bs.PanTilt
+
+    def make_pt(cfg):
+        rig["pt"] = real_pantilt(cfg, driver=PCA9685(smbus=Bus()))
+        return rig["pt"]
+
+    monkeypatch.setattr(bs, "PanTilt", make_pt)
+    texture = np.kron(np.random.default_rng(2).integers(0, 256, (400, 600)), np.ones((6, 6)))
+
+    class Cam:
+        def capture_array(self, name):
+            pan, tilt = rig["pt"].position if "pt" in rig else (90, 90)
+            x = int(round(800 + (pan - 90) * pan_ppd))
+            y = int(round(700 - (tilt - 90) * tilt_ppd))
+            return texture[y:y + 720, x:x + 1280][..., None].repeat(3, 2).astype(np.uint8)
+
+    class FakeStream:
+        def __init__(self, cam, status=None, **k):
+            self.picam2 = Cam()
+            self.status = status
+        def start(self):
+            assert isinstance(self.status(), dict)  # what the browser HUD polls
+            return "http://pi:8000/"
+        def stop(self): pass
+
+    monkeypatch.setattr(stream, "CameraStream", FakeStream)
+    return bs, rig
+
+
+def test_calibrate_step_recovers_true_scale(tmp_path, monkeypatch):
+    bs, _ = _fake_rig(monkeypatch, pan_ppd=17.0, tilt_ppd=21.0)
+    cfg = Config()
+    cfg.sweep.corners_file = str(tmp_path / "none.json")
+    step_file = tmp_path / "step.json"
+    args = build_parser().parse_args(["calibrate-step", "--crop", "0.2", "--file", str(step_file)])
+    assert bs.cmd_calibrate_step(args, cfg) == 0
+    step = load_step(step_file)
+    # Servo angles quantise to PCA9685 ticks (~0.44 deg), so allow a few percent.
+    assert step["pan_px_per_deg"] == pytest.approx(17.0, rel=0.05)
+    assert step["tilt_px_per_deg"] == pytest.approx(21.0, rel=0.05)
+
+
+def test_trace_visits_every_pose(tmp_path, monkeypatch, capsys):
+    bs, _ = _fake_rig(monkeypatch, 18, 18)
+    corners = tmp_path / "corners.json"
+    save_corners(corners, SQUARE)
+    cfg = Config()
+    cfg.sweep.step_file = str(tmp_path / "none.json")
+    args = build_parser().parse_args(["board-scan", "--crop", "0.2", "--corners", str(corners), "--trace"])
+    assert bs.cmd_board_scan(args, cfg) == 0
+    n = len(bs._plan_for(args, cfg)[-1])
+    assert capsys.readouterr().out.count(" pan ") == n
+    args = build_parser().parse_args(["board-scan", "--crop", "0.2", "--corners", str(corners), "--trace-edges"])
+    assert bs.cmd_board_scan(args, cfg) == 0
+    assert capsys.readouterr().out.count(" pan ") == 4
