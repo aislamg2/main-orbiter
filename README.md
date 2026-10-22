@@ -230,7 +230,7 @@ across the edge of a square:
 1. **Find:** point at the board and slide the crop square across one still
    frame, a third of a square at a time (about 90 windows on this board). The
    camera doesn't move, so there's no blur, and it takes well under a second.
-   Every window scoring at least `look_threshold` (0.3) becomes a candidate.
+   Every window scoring at least `look_threshold` (0.15) becomes a candidate.
    Candidates on top of each other are merged.
 2. **Confirm:** for each candidate, nearest first, aim the camera straight at
    it, let it settle, then search the frames for the best-scoring square

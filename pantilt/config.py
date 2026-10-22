@@ -110,10 +110,10 @@ class SweepConfig:
     max_gap: float = 0.2          # unscanned edge (in squares) allowed to save a row/column
     target: str = "crater"        # class that triggers a photo
     threshold: float = 0.6        # probability of `target` that counts as a detection
-    look_threshold: float = 0.3   # find stage: score worth aiming the camera at
+    look_threshold: float = 0.15  # find stage: score worth aiming the camera at
     find_stride: float = 0.33     # find stage: window step, as a fraction of the square
-    find_frames: int = 2          # find stage: frames averaged per window
-    confirm_frames: int = 3       # confirm stage: frames averaged per square
+    find_frames: int = 5          # find stage: frames averaged per window
+    confirm_frames: int = 10      # confirm stage: frames averaged per square
     refine_steps: int = 2         # confirm stage: re-aims towards a better nudged square
     max_candidates: int = 40      # spots checked per pass, strongest first
     cooldown_tiles: float = 0.5   # no new photo within this many crop widths of a saved one
