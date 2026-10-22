@@ -160,3 +160,77 @@ def test_sweep_config_and_parser(tmp_path):
     args = build_parser().parse_args(["board-scan", "--crop", "0.2", "--threshold", "0.7", "--passes", "0"])
     assert (args.crop, args.threshold, args.passes) == (0.2, 0.7, 0)
     assert build_parser().parse_args(["teach"]).func.__name__ == "cmd_teach"
+
+
+def test_full_scan_with_fake_hardware(tmp_path, monkeypatch):
+    """Runs the real board-scan loop end to end: camera, Hailo and servos faked."""
+    import sys
+    import types
+
+    import pantilt.board_scan as bs
+    import pantilt.classify as classify
+    import pantilt.cli as cli
+    from pantilt.classify import CLASS_NAMES
+
+    for name in ("picamera2", "hailo_platform"):
+        monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
+    monkeypatch.setattr(bs.time, "sleep", lambda s: None)
+    monkeypatch.setattr(controller.time, "sleep", lambda s: None)
+
+    class Bus:
+        def __init__(self): self.regs = {0x00: 0x11}
+        def write_byte_data(self, a, r, v): self.regs[r] = v
+        def read_byte_data(self, a, r): return self.regs.get(r, 0)
+        def write_i2c_block_data(self, a, r, d): pass
+        def close(self): pass
+
+    real_pantilt = bs.PanTilt
+    monkeypatch.setattr(bs, "PanTilt", lambda cfg: real_pantilt(cfg, driver=PCA9685(smbus=Bus())))
+
+    frame = np.full((720, 1280, 4), 128, np.uint8)
+
+    class FakeCamera:
+        url = None
+        def __init__(self, *a, **k): pass
+        def grab(self): return frame
+        def close(self): pass
+
+    monkeypatch.setattr(cli, "_Camera", FakeCamera)
+
+    crater = CLASS_NAMES.index("crater")
+    calls = {"n": 0}
+
+    class FakeHailo:
+        def __init__(self, hef): pass
+        def __enter__(self): return self
+        def __exit__(self, *e): pass
+        def classify(self, x):
+            calls["n"] += 1
+            p = np.full(len(CLASS_NAMES), 0.01, np.float32)
+            p[crater] = 0.9  # every pose looks like a crater
+            return p
+
+    monkeypatch.setattr(classify, "HailoClassifier", FakeHailo)
+
+    corners = tmp_path / "corners.json"
+    save_corners(corners, SQUARE)
+    hef = tmp_path / "m.hef"
+    hef.write_bytes(b"")
+    out = tmp_path / "run"
+    cfg = Config()
+    args = build_parser().parse_args([
+        "board-scan", "--crop", "0.2", "--corners", str(corners), "--hef", str(hef),
+        "--out", str(out), "--cooldown-s", "0", "--no-preview"])
+    assert bs.cmd_board_scan(args, cfg) == 0
+
+    import csv
+    import json
+
+    rows = list(csv.DictReader((out / "poses.csv").open()))
+    n_poses = json.loads((out / "run.json").read_text())["poses"]
+    assert len(rows) == n_poses
+    saved = [r for r in rows if r["action"] == "saved"]
+    assert saved and len(saved) < len(rows)          # cooldown_tiles stopped duplicates
+    assert {r["action"] for r in rows} <= {"saved", "near"}
+    photos = sorted(p.name for p in (out / "photos").iterdir())
+    assert len(photos) == 2 * len(saved)             # full frame + crop for each

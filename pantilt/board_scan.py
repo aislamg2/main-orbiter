@@ -401,7 +401,7 @@ def cmd_board_scan(args, cfg: Config) -> int:
         return 0
     if args.trace:
         return _trace(cfg, crop, poses, speed)
-    return _scan(args, cfg, crop, tile, poses, threshold, cooldown_deg, cooldown_s, speed)
+    return _scan(args, cfg, crop, corners, tile, poses, threshold, cooldown_deg, cooldown_s, speed)
 
 
 def _trace(cfg: Config, crop: float, poses: list[Pose], speed: float) -> int:
@@ -429,7 +429,8 @@ def _trace(cfg: Config, crop: float, poses: list[Pose], speed: float) -> int:
     return 0
 
 
-def _scan(args, cfg, crop, tile, poses, threshold, cooldown_deg, cooldown_s, speed) -> int:
+def _scan(args, cfg, crop, corners, tile, poses, threshold, cooldown_deg, cooldown_s,
+          speed) -> int:
     from .classify import CLASS_NAMES, HailoClassifier, LiveClassifier
     from .cli import _Camera, _thumb_source
 
