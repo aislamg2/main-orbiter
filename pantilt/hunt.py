@@ -267,6 +267,14 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
     }, indent=2))
 
     progress = {"mode": "scan + revisit", "stage": "starting", "photos": 0}
+
+    def show(probs, where: str) -> None:
+        """Put the latest scores on the browser live view."""
+        order = np.argsort(probs)[::-1]
+        progress[f"{s.target} %"] = float(probs[target_i]) * 100
+        progress["top"] = f"{CLASS_NAMES[order[0]]} {probs[order[0]] * 100:.0f}%"
+        progress["#2"] = f"{CLASS_NAMES[order[1]]} {probs[order[1]] * 100:.0f}%"
+        progress["scored"] = where
     pt_ref: dict = {}
     cam_ref: dict = {}
 
@@ -341,6 +349,9 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
                     win_log.flush()
                     best_i = int(np.argmax([p[target_i] for p in probs])) if probs else -1
                     best = float(probs[best_i][target_i]) if probs else 0.0
+                    if probs:
+                        show(probs[best_i], f"{label} {k + 1}/{len(poses)} (best window)")
+                    progress["interest"] = len(pick_candidates(found, 0.5 * square_deg, s.max_candidates))
                     shake = "" if still else "  [still shaking]"
                     if wide:
                         print(f"find {k + 1}/{len(poses)}: {len(centres)} windows in "
@@ -368,8 +379,9 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
 
                 for i, c in enumerate(order, 1):
                     c.id = i
-                    progress["stage"] = f"confirm {i}/{len(order)}"
+                    progress["stage"] = f"revisit {i}/{len(order)}"
                     _confirm(c, aim, camera, pt, step, corners, side, clf.classify, s, target_i)
+                    show(np.asarray(c.probs), f"revisit {i}/{len(order)}")
                     action = "near-miss"
                     if c.confirm_p >= threshold:
                         now = time.monotonic()

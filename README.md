@@ -175,6 +175,12 @@ This does what `pantilt live --crop 0.2 --log ...` does, but the camera walks
 itself over the board. It stops at each grid point, waits until the picture is
 sharp, and saves a photo when it sees a crater.
 
+**Quick demo:** `./scripts/demo.sh --threshold 0.7` does the whole thing
+below: it teaches the corners if none are saved (add `--teach` to redo them),
+calibrates if needed, prints the plan and runs the scan. The live view shows
+the crater confidence, the top two classes and the number of points of
+interest while it runs.
+
 **1. Teach the board's corners (once, and again if the camera or board moves).**
 
 ```bash

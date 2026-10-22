@@ -93,7 +93,9 @@ def rig(monkeypatch, tmp_path):
     class FakeCamera:
         url = None
         def __init__(self, cfg, preview, port, status, thumb=None): self.status = status
-        def grab(self): self.status(); return grab()
+        def grab(self):
+            json.dumps(self.status())  # what the browser polls must be valid JSON
+            return grab()
         def close(self): pass
 
     class FakeHailo:
@@ -249,3 +251,31 @@ def test_scan_mode_walks_the_grid(rig):
     assert run["mode"] == "scan+revisit" and len(run["find_poses"]) > 10
     stops = {r["find_pose"] for r in csv.DictReader((out / "windows.csv").open())}
     assert len(stops) == len(run["find_poses"])  # windows scored at every stop
+
+
+def test_live_view_shows_confidence(rig, monkeypatch):
+    cfg, tmp = rig
+    bs.cmd_calibrate_step(build_parser().parse_args(["calibrate-step"]), cfg)
+    seen = []
+    real = cli._Camera
+
+    spies = []
+
+    class Spy(real):
+        def __init__(self, *a, **k):
+            super().__init__(*a, **k)
+            spies.append(self)
+
+        def grab(self):
+            seen.append(self.status())
+            return super().grab()
+
+    monkeypatch.setattr(cli, "_Camera", Spy)
+    args = build_parser().parse_args(["board-scan", "--hef", str(tmp / "m.hef"),
+                                      "--out", str(tmp / "r"), "--no-preview"])
+    assert bs.cmd_board_scan(args, cfg) == 0
+    seen.append(spies[0].status())  # the browser keeps polling after the last frame
+    scored = [d for d in seen if "crater %" in d]
+    assert scored and {"top", "#2", "scored", "interest"} <= set(scored[-1])
+    assert max(d["crater %"] for d in scored) > 80                 # the crater showed up live
+    assert any(d["scored"].startswith("revisit") for d in scored)
