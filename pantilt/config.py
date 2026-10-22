@@ -66,6 +66,40 @@ class ModelConfig:
 
 
 @dataclass
+class BoardConfig:
+    """The printed map, and where the camera sits relative to it.
+
+    These are measurements, not preferences. `pantilt measure-k` produces
+    mm_per_px; the centre angles come from jogging to the middle of the board
+    with `pantilt keys` and reading them off.
+    """
+
+    distance_mm: float = 1500.0   # camera to board surface
+    mm_per_px: float = 0.0        # 0 = not measured yet; run `pantilt measure-k`
+    width_mm: float = 1219.0      # the printed map, not the whole sheet
+    height_mm: float = 914.0
+    overlap: float = 0.20         # fraction shared with each neighbouring tile
+    pan_center_deg: float = 90.0  # angles that look at the middle of the board
+    tilt_center_deg: float = 90.0
+    pan_sign: float = 1.0         # +1 if a larger pan angle moves the view right
+    tilt_sign: float = 1.0        # +1 if a larger tilt angle moves the view up
+
+    def __post_init__(self):
+        if self.distance_mm <= 0:
+            raise ValueError("distance_mm must be positive")
+        if self.mm_per_px < 0:
+            raise ValueError("mm_per_px must be >= 0 (0 means not yet measured)")
+        if not 0 <= self.overlap < 1:
+            raise ValueError("overlap must be in [0, 1)")
+        if self.pan_sign not in (1.0, -1.0) or self.tilt_sign not in (1.0, -1.0):
+            raise ValueError("pan_sign and tilt_sign must be 1.0 or -1.0")
+
+    @property
+    def measured(self) -> bool:
+        return self.mm_per_px > 0
+
+
+@dataclass
 class Config:
     driver: DriverConfig = field(default_factory=DriverConfig)
     pan: ServoConfig = field(default_factory=lambda: ServoConfig(channel=1))
@@ -75,6 +109,7 @@ class Config:
     motion: MotionConfig = field(default_factory=MotionConfig)
     camera: CameraConfig = field(default_factory=CameraConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
+    board: BoardConfig = field(default_factory=BoardConfig)
 
 
 _SECTIONS = {
@@ -84,6 +119,7 @@ _SECTIONS = {
     "motion": MotionConfig,
     "camera": CameraConfig,
     "model": ModelConfig,
+    "board": BoardConfig,
 }
 
 

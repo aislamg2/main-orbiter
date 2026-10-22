@@ -23,3 +23,7 @@ captures/
 .vscode/
 .idea/
 .DS_Store
+
+data/runs/
+hailort.log
+k_measure.png

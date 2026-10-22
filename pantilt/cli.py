@@ -13,6 +13,7 @@ from pathlib import Path
 from .config import load_config
 from .controller import PanTilt
 from .scan import raster
+from .survey import cmd_measure_k, cmd_survey
 
 
 # -- commands ----------------------------------------------------------------
@@ -440,6 +441,22 @@ def build_parser() -> argparse.ArgumentParser:
     sc.add_argument("--capture", metavar="DIR", help="save a photo at each pose into DIR")
     sc.add_argument("--dwell", type=float, default=0.5, help="pause per pose without --capture")
     sc.set_defaults(func=cmd_scan)
+
+    mk = sub.add_parser("measure-k", help="measure mm per pixel from two marks on the board")
+    mk.add_argument("--separation", type=float, default=1000.0, help="distance between the marks in mm (default 1000)")
+    mk.add_argument("--out", default="k_measure.png", help="where to save the frame")
+    mk.set_defaults(func=cmd_measure_k)
+
+    sv = sub.add_parser("survey", help="scan the board, classify each tile, save the craters")
+    sv.add_argument("--dry-run", action="store_true", help="print the plan, move nothing")
+    sv.add_argument("--threshold", type=float, default=0.5, help="crater probability that counts as a detection (default 0.5)")
+    sv.add_argument("--crop", type=float, help="fraction of the frame to classify (default: [model] crop)")
+    sv.add_argument("--repeat", type=int, default=1, help="captures averaged per pose to cut sensor noise (default 1)")
+    sv.add_argument("--save-all", action="store_true", help="save every tile, not just the hits (needed for a mosaic)")
+    sv.add_argument("--serpentine", action="store_true", help="halve the travel, at the cost of backlash flipping sign per row")
+    sv.add_argument("--hef", help="model override (default: [model] hef_path)")
+    sv.add_argument("--out", metavar="DIR", help="run directory (default: data/runs/<timestamp>)")
+    sv.set_defaults(func=cmd_survey)
 
     lv = sub.add_parser("live", help="real-time landmark classification on the Hailo-8")
     lv.add_argument("--hef", help="compiled model (default: [model] hef_path in config.toml)")

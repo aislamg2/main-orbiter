@@ -43,3 +43,15 @@ crop = 1.0               # part of the frame to classify: 1.0 = largest centered
 smooth_frames = 5        # average over N frames so the label doesn't flicker (1 = off)
 min_confidence = 0.0     # show "uncertain" below this confidence (0-1)
 log_every_s = 1.0        # seconds between rows in the predictions CSV (--log)
+
+[board]                   # the printed map and where the camera sits
+distance_mm     = 1500.0  # camera to board surface, measured with a tape
+mm_per_px       = 0.0     # `pantilt measure-k` fills this in - survey refuses to run at 0
+width_mm        = 1219.0  # the printed map, not the whole sheet
+height_mm       = 914.0
+overlap         = 0.20    # shared with each neighbour, so a crater on a tile
+                          # boundary isn't halved in both tiles
+pan_center_deg  = 90.0    # jog to the middle of the board with `pantilt keys`
+tilt_center_deg = 90.0    # and read these off
+pan_sign        = 1.0     # flip to -1.0 if the scan runs the wrong way
+tilt_sign       = 1.0     # with rotate_180 on, expect at least one to be -1.0
