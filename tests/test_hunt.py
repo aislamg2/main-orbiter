@@ -30,9 +30,9 @@ def texture_xy(pan, tilt):
     return int(round(800 + (pan - 90) * PPD)), int(round(700 - (tilt - 90) * PPD))
 
 
-def make_texture():
+def make_texture(crater=CRATER):
     tex = np.kron(np.random.default_rng(3).integers(0, 200, (400, 600)), np.ones((6, 6)))
-    x, y = texture_xy(*CRATER)
+    x, y = texture_xy(*crater)
     cx, cy = x + 640, y + 360
     yy, xx = np.ogrid[:tex.shape[0], :tex.shape[1]]
     tex[(xx - cx) ** 2 + (yy - cy) ** 2 <= 18 ** 2] = 255   # the only pure-white pixels
@@ -52,7 +52,7 @@ def crater_score(x):
 
 
 @pytest.fixture
-def rig(monkeypatch, tmp_path):
+def rig(request, monkeypatch, tmp_path):
     for name in ("picamera2", "hailo_platform"):
         monkeypatch.setitem(sys.modules, name, types.ModuleType(name))
     monkeypatch.setattr(bs.time, "sleep", lambda s: None)
@@ -75,7 +75,7 @@ def rig(monkeypatch, tmp_path):
     monkeypatch.setattr(bs, "PanTilt", make_pt)
     import pantilt.hunt as hunt
     monkeypatch.setattr(hunt, "PanTilt", make_pt)
-    tex = make_texture()
+    tex = make_texture(getattr(request, "param", CRATER))
 
     def grab():
         pan, tilt = state["pt"].position if "pt" in state else (90, 90)
@@ -371,3 +371,23 @@ def test_wide_header_says_wide(rig, capsys):
     capsys.readouterr()
     assert bs.cmd_board_scan(build_parser().parse_args(["board-scan", "--wide", "--dry-run"]), cfg) == 0
     assert "mode         wide view + revisit" in capsys.readouterr().out
+
+
+# Just inside the taught outline's top-left corner: 0.15 of a square from each edge.
+EDGE_CRATER = (BOARD[0][0] + 0.15 * 8.47, BOARD[0][1] - 0.15 * 8.47)
+
+
+@pytest.mark.parametrize("rig", [EDGE_CRATER], indirect=True)
+@pytest.mark.parametrize("margin, photos", [(0.0, 0), (0.4, 1)])
+def test_crater_near_the_outline_needs_edge_margin(rig, margin, photos):
+    cfg, tmp = rig
+    bs.cmd_calibrate_step(build_parser().parse_args(["calibrate-step"]), cfg)
+    cfg.sweep.edge_margin = margin
+    out = tmp / f"edge{margin}"
+    args = build_parser().parse_args(["board-scan", "--hef", str(tmp / "m.hef"), "--out", str(out),
+                                      "--threshold", "0.7", "--no-preview"])
+    assert bs.cmd_board_scan(args, cfg) == 0
+    saved = [c for c in csv.DictReader((out / "candidates.csv").open()) if c["action"] == "saved"]
+    assert len(saved) == photos
+    if photos:
+        assert (float(saved[0]["pan"]), float(saved[0]["tilt"])) == pytest.approx(EDGE_CRATER, abs=1.0)

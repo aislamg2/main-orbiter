@@ -70,6 +70,7 @@ find_frames    = 5        # scan: score = average of the last 5 frames (one luck
 confirm_frames = 10       # revisit: score = average of the last 10 frames
 refine_steps   = 2        # confirm stage: times it may re-aim towards a better nudged square
 max_candidates = 40       # spots checked per pass, strongest first
+edge_margin    = 0.4      # a square may hang 40% off the taught outline, so craters at the edge can be centred
 watch_min_s    = 0.8      # classify at least this long at every stop and revisit
 watch_max_s    = 3.0      # at a scan stop, keep watching up to this long while the crater score climbs
 revisit_watch_max_s = 4.0 # same when going back to a point of interest

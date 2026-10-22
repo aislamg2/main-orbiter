@@ -197,6 +197,11 @@ direction. Press **m** at each corner, **g** to re-visit them, **u** to undo,
 and **s** to save to `data/board_corners.json`. The scan never leaves this shape,
 so nothing off the board gets photographed.
 
+Mark the **outer** corners of the printed area: the outside corners of the
+outermost sheets, not a point a little way in. A crater close to the outline
+can only be centred in a square if the outline is at or beyond it
+(`edge_margin` lets a square hang 40% off the outline to help with that).
+
 **2. Measure the step (once, and again if you change the camera, lens or servos).**
 Re-run it if your `data/board_step.json` is from before the scan + revisit
 scan: that scan also needs the direction each servo moves the image.
@@ -323,6 +328,7 @@ How it avoids blur and duplicate photos (all set in `[sweep]` in `config.toml`):
 | `find_frames`, `confirm_frames` | Frames averaged per window in each stage |
 | `refine_steps` | Confirm stage: how many times it may re-aim towards a better square |
 | `max_candidates` | Spots checked per pass, strongest first |
+| `edge_margin` | How far a square may hang off the taught outline (0.4 = 40%), so a crater near the edge can still be centred |
 | `watch_min_s` | Minimum time spent classifying at each stop and revisit |
 | `watch_max_s`, `revisit_watch_max_s` | How long it may keep watching while the score is still climbing |
 | `cooldown_tiles` | No new photo within half a square of one already saved, which stops repeats of the same square on later `--passes` |

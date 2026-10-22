@@ -53,6 +53,7 @@ Settings without a flag live under `[sweep]` in `config.toml`:
 | `settle_s` / `settle_max_s` | Wait after each move / longest wait for the shaking to stop |
 | `refine_steps` | Times a revisit may re-aim towards a better square |
 | `overlap` / `max_gap` | How the scan squares tile the board |
+| `edge_margin` | How far a square may hang off the taught outline (0.4), so craters at the edge can be centred |
 
 ## Setting up the board
 
@@ -65,7 +66,9 @@ Settings without a flag live under `[sweep]` in `config.toml`:
 
 In `teach`: the arrow keys aim, `+`/`-` change the step size, `m` (or space)
 marks a corner, `u` undoes, `g` re-visits the marks, `s` saves, `q` quits. Mark
-the corners in order going around the edge of the printed map.
+the corners in order going around the edge of the printed map, on the **outer**
+corners of the outermost sheets. Craters close to the outline are only checked
+properly if the outline reaches them.
 
 ## Looking around by hand
 
@@ -99,7 +102,7 @@ Each `board-scan` run saves to `data/runs/board-<date>-<time>/`:
 | File | What's in it |
 |---|---|
 | `photos/` | Each crater photo (`.jpg`) and the exact square the model judged (`_crop.png`) |
-| `overview_p1_0.jpg` | The whole board: outline (blue), scan stops (magenta), photos (green), near misses (orange) |
+| `overview_p1_0.jpg` | The whole board: outline (blue), scan stops (magenta), photos (green), near misses (orange), skipped duplicates (grey, labelled at the bottom) |
 | `candidates.csv` | Every revisit: scan score, revisit score, seconds watched, result |
 | `windows.csv` | Every square scored during the scan |
 | `run.json` | The settings used |

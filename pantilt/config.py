@@ -116,6 +116,7 @@ class SweepConfig:
     confirm_frames: int = 10      # confirm stage: frames averaged per square
     refine_steps: int = 2         # confirm stage: re-aims towards a better nudged square
     max_candidates: int = 40      # spots checked per pass, strongest first
+    edge_margin: float = 0.4      # a square may hang this far off the taught outline (0-0.5)
     watch_min_s: float = 0.8      # always classify this long at each stop/revisit
     watch_max_s: float = 3.0      # at a scan stop, keep watching this long while the score climbs
     revisit_watch_max_s: float = 4.0  # same for a revisit
@@ -140,6 +141,8 @@ class SweepConfig:
             raise ValueError("look_threshold must be in [0, 1]")
         if not 0 < self.find_stride <= 1:
             raise ValueError("find_stride must be in (0, 1]")
+        if not 0 <= self.edge_margin <= 0.5:
+            raise ValueError("edge_margin must be in [0, 0.5]")
         if not 0 <= self.watch_min_s <= min(self.watch_max_s, self.revisit_watch_max_s):
             raise ValueError("need 0 <= watch_min_s <= watch_max_s and revisit_watch_max_s")
         if min(self.find_frames, self.confirm_frames) < 1 or self.refine_steps < 0:

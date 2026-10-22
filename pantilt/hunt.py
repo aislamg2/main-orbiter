@@ -85,21 +85,32 @@ def inside(corners: list[Corner], pan: float, tilt: float) -> bool:
     return all(v >= 0 for v in signs) or all(v <= 0 for v in signs)
 
 
-def window_on_board(view: View, corners: list[Corner], x: float, y: float, side: int) -> bool:
+def window_on_board(view: View, corners: list[Corner], x: float, y: float, side: int,
+                    margin: float = 0.0) -> bool:
+    """The window is in the frame and on the board, allowing it to hang off the
+    board's edge by `margin` of its width (0.5 = only its centre must be on).
+
+    Without some margin a crater near the taught outline can never be centred
+    in a window, because every window has to fit inside the outline.
+    """
     h = side / 2
     if x - h < 0 or y - h < 0 or x + h > view.w or y + h > view.h:
         return False
+    k = max(0.0, h - margin * side)
+    if k == 0:
+        return inside(corners, *view.to_angle(x, y))
     return all(inside(corners, *view.to_angle(x + dx, y + dy))
-               for dx in (-h, h) for dy in (-h, h))
+               for dx in (-k, k) for dy in (-k, k))
 
 
-def windows(view: View, corners: list[Corner], side: int, stride: int) -> list[tuple[int, int]]:
-    """Window centres on a lattice over the frame, keeping those fully on the board."""
+def windows(view: View, corners: list[Corner], side: int, stride: int,
+            margin: float = 0.0) -> list[tuple[int, int]]:
+    """Window centres on a lattice over the frame, keeping those on the board."""
     half = side // 2
     out = []
     for y in range(half, view.h - half + 1, stride):
         for x in range(half, view.w - half + 1, stride):
-            if window_on_board(view, corners, x, y, side):
+            if window_on_board(view, corners, x, y, side, margin):
                 out.append((x, y))
     return out
 
@@ -123,7 +134,8 @@ def scan_poses(corners: list[Corner], step: dict, frame_w: int, frame_h: int, cr
                 serpentine=True, max_gap=max_gap)
 
 
-def local_windows(view: View, corners: list[Corner], side: int, stride: int) -> list[tuple[int, int]]:
+def local_windows(view: View, corners: list[Corner], side: int, stride: int,
+                  margin: float = 0.0) -> list[tuple[int, int]]:
     """The centre window plus copies nudged by `stride`, out to half a square each way.
 
     Neighbouring grid stops are at most a square apart, so between them these
@@ -132,7 +144,7 @@ def local_windows(view: View, corners: list[Corner], side: int, stride: int) -> 
     n = int(side / 2 / stride + 1e-9)
     cx, cy = int(view.cx), int(view.cy)
     out = [(cx + i * stride, cy + j * stride) for j in range(-n, n + 1) for i in range(-n, n + 1)]
-    return [xy for xy in out if window_on_board(view, corners, *xy, side)]
+    return [xy for xy in out if window_on_board(view, corners, *xy, side, margin)]
 
 
 def crop_at(frame, x: int, y: int, side: int):
@@ -284,7 +296,8 @@ def plan_summary(cfg: Config, corners, step, crop: float,
     else:
         poses = scan_poses(corners, step, w, h, crop, s.overlap, s.max_gap)
         pick = local_windows
-    counts = [len(pick(View(step, w, h, p.pan, p.tilt), corners, side, stride)) for p in poses]
+    counts = [len(pick(View(step, w, h, p.pan, p.tilt), corners, side, stride, s.edge_margin))
+              for p in poses]
     return side, poses, stride, sum(counts)
 
 
@@ -440,7 +453,8 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
                     still = aim(pose.pan, pose.tilt)
                     first = camera.grab()
                     view = View(step, first.shape[1], first.shape[0], *pt.position)
-                    centres = (windows if wide else local_windows)(view, corners, side, stride)
+                    centres = (windows if wide else local_windows)(view, corners, side, stride,
+                                                                   s.edge_margin)
                     t0 = time.time()
                     where = f"{label} {k + 1}/{len(poses)}"
                     seen = None
@@ -543,7 +557,7 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
     return 0
 
 
-def _refine(frames, view, corners, side, classify, target_i, x0, y0):
+def _refine(frames, view, corners, side, classify, target_i, x0, y0, margin: float = 0.0):
     """Coarse-to-fine search for the best-scoring square around (x0, y0), no moving.
 
     Tries the 8 neighbours a quarter square away, moves to the best, and halves
@@ -553,7 +567,7 @@ def _refine(frames, view, corners, side, classify, target_i, x0, y0):
 
     def score(x, y):
         if (x, y) not in scores:
-            if not window_on_board(view, corners, x, y, side):
+            if not window_on_board(view, corners, x, y, side, margin):
                 scores[(x, y)] = None
             else:
                 scores[(x, y)] = score_windows(frames, [(x, y)], side, classify)[0]
@@ -591,7 +605,8 @@ def _confirm(c: Candidate, aim, camera, pt, step, corners, side, classify, s, ta
                      rise_level=1.0, stop_at=threshold, on_update=on_update)
         frames = seen.frames or [first]
         c.watched_s += seen.seconds
-        (bx, by), probs = _refine(frames, view, corners, side, classify, target_i, cx, cy)
+        (bx, by), probs = _refine(frames, view, corners, side, classify, target_i, cx, cy,
+                                  s.edge_margin)
         c.confirm_p, c.frame, c.xy = float(probs[target_i]), frames[-1], (bx, by)
         c.probs = [float(v) for v in probs]
         c.pan, c.tilt = view.to_angle(bx, by)
@@ -625,7 +640,12 @@ def _overview(path: Path, frame, view: View, corners, side: int, cands: list[Can
         x, y = view.to_px(c.pan, c.tilt)  # where confirm pinned it, not the first rough window
         d.rectangle([x - h, y - h, x + h, y + h], outline=col, width=3)
         label = f"{c.id}: {c.find_p:.2f} -> {c.confirm_p:.2f}"
-        box = d.textbbox((x - h + 4, y - h + 4), label)
+        # Skipped duplicates usually sit right on top of a photo's box: put
+        # their label along the bottom edge so the photo's label stays readable.
+        at = (x - h + 4, y - h + 4) if c.action in colours else (x - h + 4, y + h - 16)
+        if c.action not in colours:
+            label += " (dup)" if c.action == "near" else f" ({c.action})"
+        box = d.textbbox(at, label)
         d.rectangle([box[0] - 2, box[1] - 2, box[2] + 2, box[3] + 2], fill=(0, 0, 0))
-        d.text((x - h + 4, y - h + 4), label, fill=col)
+        d.text(at, label, fill=col)
     img.save(path, quality=90)
