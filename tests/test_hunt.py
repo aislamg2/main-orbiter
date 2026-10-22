@@ -90,8 +90,15 @@ def rig(monkeypatch, tmp_path):
         def start(self): self.status(); return "http://pi:8000/"
         def stop(self): pass
 
+    class FakePicam:
+        controls: list = []
+        def capture_metadata(self):
+            return {"ExposureTime": 12000, "AnalogueGain": 1.5, "ColourGains": (1.8, 1.6)}
+        def set_controls(self, c): FakePicam.controls.append(c)
+
     class FakeCamera:
         url = None
+        cam = FakePicam()
         def __init__(self, cfg, preview, port, status, thumb=None): self.status = status
         def grab(self):
             json.dumps(self.status())  # what the browser polls must be valid JSON
@@ -110,6 +117,7 @@ def rig(monkeypatch, tmp_path):
 
     cfg = Config()
     cfg.model.crop = 0.2
+    cfg.sweep.watch_min_s = 0.0  # the rig's frames never change; don't sit in real time
     cfg.sweep.corners_file = str(tmp_path / "corners.json")
     cfg.sweep.step_file = str(tmp_path / "step.json")
     save_corners(cfg.sweep.corners_file, BOARD)
@@ -279,3 +287,87 @@ def test_live_view_shows_confidence(rig, monkeypatch):
     assert scored and {"top", "#2", "scored", "interest"} <= set(scored[-1])
     assert max(d["crater %"] for d in scored) > 80                 # the crater showed up live
     assert any(d["scored"].startswith("revisit") for d in scored)
+
+
+class _Clock:
+    """Each grabbed frame takes 50 ms."""
+    def __init__(self): self.t = 0.0
+    def __call__(self): return self.t
+
+
+def _watch(scores, **kw):
+    """Run watch() over a sequence of crater scores, one per frame."""
+    from pantilt.hunt import watch
+
+    clock = _Clock()
+    seq = iter(scores)
+    crater = CLASS_NAMES.index("crater")
+
+    def grab():
+        clock.t += 0.05
+        return next(seq)
+
+    def score(v):
+        p = np.zeros((1, len(CLASS_NAMES)), np.float32)
+        p[0, crater] = v
+        return p
+
+    args = dict(smooth=5, min_s=0.8, max_s=3.0, rise_level=0.1, stop_at=0.7)
+    args.update(kw)
+    return watch(grab, score, crater, clock=clock, **args)
+
+
+def test_watch_moves_on_quickly_from_empty_board():
+    w = _watch([0.01] * 200)
+    assert w.seconds == pytest.approx(0.8, abs=0.06)
+
+
+def test_watch_stays_while_the_score_climbs():
+    # Exposure settling: the crater score creeps up from 0.2 to 0.65 over 2 s.
+    rising = list(np.linspace(0.2, 0.65, 40)) + [0.65] * 200
+    w = _watch(rising)
+    assert w.seconds > 2.0 and w.best > 0.6            # waited it out
+    short = _watch(rising, max_s=0.8)
+    assert short.best < 0.4 and short.rising           # a fixed short look misses it
+
+
+def test_watch_stops_once_good_enough():
+    w = _watch(list(np.linspace(0.2, 1.0, 60)) + [1.0] * 100)
+    assert w.best >= 0.7 and w.seconds < 2.5
+
+
+def test_watch_ignores_one_lucky_frame():
+    w = _watch([0.05] * 10 + [0.95] + [0.05] * 200)
+    assert w.best < 0.3                                 # 5-frame average
+
+
+def test_watch_gives_up_on_a_flat_maybe():
+    w = _watch([0.4] * 200)                             # worth a look, never improves
+    assert w.seconds < 1.8 and w.best == pytest.approx(0.4)
+
+
+def test_lock_exposure(rig):
+    cfg, tmp = rig
+    bs.cmd_calibrate_step(build_parser().parse_args(["calibrate-step"]), cfg)
+    cam = cli._Camera.cam
+    cam.controls.clear()
+    out = tmp / "locked"
+    args = build_parser().parse_args(["board-scan", "--lock-exposure", "--hef", str(tmp / "m.hef"),
+                                      "--out", str(out), "--no-preview"])
+    assert bs.cmd_board_scan(args, cfg) == 0
+    assert cam.controls == [{"AeEnable": False, "AwbEnable": False, "ExposureTime": 12000,
+                             "AnalogueGain": 1.5, "ColourGains": (1.8, 1.6)}]
+    assert json.loads((out / "run.json").read_text())["exposure_locked"]["ExposureTime"] == 12000
+    # Without the flag nothing is locked.
+    cam.controls.clear()
+    args = build_parser().parse_args(["board-scan", "--hef", str(tmp / "m.hef"),
+                                      "--out", str(tmp / "free"), "--no-preview"])
+    assert bs.cmd_board_scan(args, cfg) == 0 and cam.controls == []
+
+
+def test_wide_header_says_wide(rig, capsys):
+    cfg, tmp = rig
+    bs.cmd_calibrate_step(build_parser().parse_args(["calibrate-step"]), cfg)
+    capsys.readouterr()
+    assert bs.cmd_board_scan(build_parser().parse_args(["board-scan", "--wide", "--dry-run"]), cfg) == 0
+    assert "mode         wide view + revisit" in capsys.readouterr().out

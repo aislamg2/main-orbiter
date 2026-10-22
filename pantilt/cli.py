@@ -536,6 +536,7 @@ def build_parser() -> argparse.ArgumentParser:
     bs.add_argument("--passes", type=int, default=1, help="times over the board (0 = until Ctrl+C)")
     bs.add_argument("--grid", action="store_true", help="old one-look-per-square grid, no revisits")
     bs.add_argument("--wide", action="store_true", help="find from one frame of the whole board instead of walking the grid")
+    bs.add_argument("--lock-exposure", action="store_true", help="freeze exposure/white balance at the start of the run")
     bs.add_argument("--one-way", action="store_true", help="(--grid) every row left to right instead of serpentine")
     bs.add_argument("--dry-run", action="store_true", help="print the grid, move nothing")
     bs.add_argument("--trace", action="store_true", help="walk every grid point without classifying, to check coverage")

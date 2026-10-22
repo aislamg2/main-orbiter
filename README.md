@@ -60,6 +60,8 @@ pantilt check
 
 ## Usage
 
+> **All commands on one page:** [COMMANDS.md](COMMANDS.md)
+
 ```bash
 pantilt check                 # I2C bus, PCA9685 at 0x40, Hailo on PCIe
 pantilt center                # both servos to 90°
@@ -175,6 +177,8 @@ This does what `pantilt live --crop 0.2 --log ...` does, but the camera walks
 itself over the board. It stops at each grid point, waits until the picture is
 sharp, and saves a photo when it sees a crater.
 
+Every command is listed on one page: [COMMANDS.md](COMMANDS.md).
+
 **Quick demo:** `./scripts/demo.sh --threshold 0.7` does the whole thing
 below: it teaches the corners if none are saved (add `--teach` to redo them),
 calibrates if needed, prints the plan and runs the scan. The live view shows
@@ -236,16 +240,33 @@ across the edge of a square:
 1. **Scan:** the camera walks the whole board, one crop square per stop (the
    same grid `--trace` shows), in a snake pattern. At each stop, once the image
    is still, it scores the centre square plus copies nudged a third of a square
-   each way, averaged over `find_frames` frames. Each part of the board is
-   judged near the middle of the lens, where it's sharpest. Any stop where the
-   crater score rises to `look_threshold` (0.15) is flagged as a point of
-   interest. Points that sit on top of each other are merged.
+   each way. Each part of the board is judged near the middle of the lens,
+   where it's sharpest. Any stop where the crater score rises to
+   `look_threshold` (0.15) is flagged as a point of interest. Points that sit on
+   top of each other are merged.
 2. **Go back:** it revisits each point of interest, nearest first. It aims the
-   camera straight at it, lets it settle, and averages `confirm_frames` frames
-   while searching for the best-scoring square around the middle (steps of a
+   camera straight at it, watches it settle (see below), and searches for the
+   best-scoring square around the middle (steps of a
    quarter, an eighth and a sixteenth of a square). If the best square is well
    off-centre, it re-aims there and checks again. A photo is saved only if the
    best score clears `--threshold`. Anything less is logged as a near miss.
+
+**Watching instead of glancing:** at every stop and revisit it keeps
+classifying until the score settles, like you would when aiming by hand. The
+camera's exposure takes a moment to adjust to each new patch of board, so the
+first frames after a move can score low. Scores are averaged over the last few
+frames (`find_frames` = 5 for scan stops, `confirm_frames` = 10 for revisits),
+so one lucky frame can't pass. Each stop is watched for at least `watch_min_s`
+(0.8 s). If the crater score is climbing, or is already worth a look, it keeps
+watching for up to `watch_max_s` (3 s), or `revisit_watch_max_s` (4 s) on a
+revisit, and keeps the best steady score. Empty board stays flat near 0, so
+those stops still move on quickly. The live view shows the score changing
+while it watches.
+
+`--lock-exposure` freezes exposure and white balance at the start of the run,
+looking at the board centre. Every stop then sees the board at the same
+brightness, and fading daylight can't change the scores during a run. If the
+board is lit unevenly, compare a run with and without it.
 
 `--wide` skips walking the grid and does the first stage from a single frame
 of the whole board (quicker, but the board edges are judged near the edge of
@@ -302,6 +323,8 @@ How it avoids blur and duplicate photos (all set in `[sweep]` in `config.toml`):
 | `find_frames`, `confirm_frames` | Frames averaged per window in each stage |
 | `refine_steps` | Confirm stage: how many times it may re-aim towards a better square |
 | `max_candidates` | Spots checked per pass, strongest first |
+| `watch_min_s` | Minimum time spent classifying at each stop and revisit |
+| `watch_max_s`, `revisit_watch_max_s` | How long it may keep watching while the score is still climbing |
 | `cooldown_tiles` | No new photo within half a square of one already saved, which stops repeats of the same square on later `--passes` |
 | `cooldown_s` | Minimum seconds between photos (0 = off, since squares no longer overlap) |
 | `max_photos` | Hard cap per run |

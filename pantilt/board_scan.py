@@ -587,6 +587,8 @@ def cmd_board_scan(args, cfg: Config) -> int:
 
     if not (args.grid or args.trace or args.trace_edges):
         return _find_mode(args, cfg, crop, corners, threshold, cooldown_s, speed)
+    if args.lock_exposure:
+        print("note: --lock-exposure only applies to the scan + revisit modes; ignoring it")
 
     print(_describe(cfg, crop, tile, source, poses, threshold, cooldown_deg, cooldown_s, speed))
     print()

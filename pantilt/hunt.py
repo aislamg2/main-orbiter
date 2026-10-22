@@ -156,6 +156,73 @@ def score_windows(frames, centres, side: int, classify) -> list:
     return out
 
 
+@dataclass
+class Watch:
+    best: float           # highest smoothed target score seen
+    probs: list           # per window: smoothed probabilities at that window's best moment
+    frames: list          # the frames in the smoothing window at the overall best moment
+    seen: int             # frames classified
+    seconds: float
+    rising: bool          # still climbing when time ran out
+
+
+def watch(grab, score, target_i: int, smooth: int, min_s: float, max_s: float,
+          rise_level: float, stop_at: float, on_update=None, clock=time.monotonic) -> Watch:
+    """Keep classifying one view until the score settles, the way you would by hand.
+
+    score(frame) gives one row of class probabilities per window. Scores are
+    averaged over the last `smooth` frames, so one lucky frame can't pass. It
+    always watches for min_s, then moves on once the score is low and flat. If
+    the score is climbing - exposure still settling, a last bit of wobble dying
+    away - or already worth a look (>= rise_level), it stays up to max_s and
+    keeps the best steady score. It stops early once the score reaches stop_at.
+    """
+    import numpy as np
+
+    from collections import deque
+
+    buf: deque = deque(maxlen=max(1, smooth))
+    history: list[float] = []
+    best = -1.0
+    best_rows = None
+    best_frames: list = []
+    t0 = last_rise = clock()
+    seen = 0
+    rising = False
+    while True:
+        frame = grab()
+        buf.append((frame, np.asarray(score(frame), dtype=np.float32)))
+        seen += 1
+        avg = np.mean([p for _, p in buf], axis=0)            # windows x classes
+        cur = float(avg[:, target_i].max()) if len(avg) else 0.0
+        if best_rows is None:
+            best_rows = avg.copy()
+        else:  # each window keeps its own best moment
+            better = avg[:, target_i] > best_rows[:, target_i]
+            best_rows[better] = avg[better]
+        if cur > best:
+            best, best_frames = cur, [f for f, _ in buf]
+        history.append(cur)
+        now = clock()
+        rising = len(history) > smooth and cur > history[-1 - smooth] + 0.02
+        if rising:
+            last_rise = now
+        if on_update:
+            on_update(avg[int(np.argmax(avg[:, target_i]))] if len(avg) else None, now - t0)
+        if len(buf) < buf.maxlen:
+            continue                      # fill the smoothing window first
+        elapsed = now - t0
+        if elapsed >= max_s or best >= stop_at:
+            break
+        if elapsed >= min_s:
+            if cur < rise_level and not rising:
+                break                     # nothing here
+            if now - last_rise >= min_s:
+                break                     # worth a look, but it has stopped improving
+    return Watch(best=max(best, 0.0), probs=list(best_rows), frames=best_frames, seen=seen,
+                 seconds=clock() - t0, rising=rising)
+
+
 def pick_candidates(found: list, min_deg: float, limit: int) -> list:
     """Strongest first, dropping any within min_deg of a stronger one (non-max suppression)."""
     kept = []
@@ -179,10 +246,29 @@ class Candidate:
     confirm_p: float = 0.0
     probs: list = field(default_factory=list)
     moves: int = 0
+    watched_s: float = 0.0
     action: str = ""
     photo: str = ""
     frame: object = field(default=None, repr=False)   # best confirm frame, until saved
     xy: tuple = (0, 0)                                # best square's centre in that frame
+
+
+# -- exposure ------------------------------------------------------------------
+def lock_exposure(picam2) -> dict:
+    """Freeze exposure, gain and white balance at whatever auto mode chose just now.
+
+    Every stop then sees the board at the same brightness, so no stop has to
+    wait for the camera to re-adjust, and fading daylight can't drift the
+    scores during a run. Call it while the camera looks at the board.
+    """
+    md = picam2.capture_metadata()
+    settings = {
+        "ExposureTime": int(md["ExposureTime"]),
+        "AnalogueGain": float(md["AnalogueGain"]),
+        "ColourGains": tuple(float(x) for x in md["ColourGains"]),
+    }
+    picam2.set_controls({"AeEnable": False, "AwbEnable": False, **settings})
+    return settings
 
 
 # -- the run -------------------------------------------------------------------
@@ -213,11 +299,14 @@ def describe(cfg: Config, crop: float, side: int, poses, stride: int, n_windows:
         cols = max(p.col for p in poses) + 1
         find = (f"scan         {cols} x {rows} = {len(poses)} stops over the board, "
                 f"{n_windows} windows in all ({stride} px nudges)")
+    mode = "wide view + revisit" if wide else "scan + revisit"
     return "\n".join([
-        "mode         scan + revisit  (--grid for the old one-look-per-square scan)",
+        f"mode         {mode}  (--grid for the old one-look-per-square scan)",
         f"crop         {crop:.2f} of the frame -> {side} px square",
         find,
         f"interest     {s.target} >= {s.look_threshold:.2f} during the scan, up to {s.max_candidates} revisits",
+        f"watch        {s.watch_min_s:.1f}-{s.watch_max_s:.1f} s per stop (longer while the score climbs), "
+        f"up to {s.revisit_watch_max_s:.1f} s per revisit",
         f"photo        {s.target} >= {threshold:.2f} after going back and aiming straight at it "
         f"(up to {s.refine_steps} re-aims)",
     ])
@@ -294,8 +383,8 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
                     "top_label", *names])
     cand_log = open(run / "candidates.csv", "w", newline="")
     cand_w = csv.writer(cand_log)
-    cand_w.writerow(["pass", "id", "pan", "tilt", "find_p", "confirm_p", "re_aims", "action", "photo",
-                     *names])
+    cand_w.writerow(["pass", "id", "pan", "tilt", "find_p", "confirm_p", "re_aims", "watched_s",
+                     "action", "photo", *names])
 
     camera = None
     t_start = time.time()
@@ -315,6 +404,22 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
                 time.sleep(s.settle_s)
                 return wait_still(camera.grab, s.still_diff, s.settle_max_s - s.settle_s)
 
+            mid = (sum(p for p, _ in corners) / 4, sum(t for _, t in corners) / 4)
+            if getattr(args, "lock_exposure", False):
+                progress["stage"] = "locking exposure"
+                aim(*mid)
+                time.sleep(1.5)  # let auto-exposure settle on the board itself
+                locked = lock_exposure(camera.cam)
+                time.sleep(0.5)  # a few frames for the new controls to take effect
+                info = json.loads((run / "run.json").read_text())
+                info["exposure_locked"] = locked
+                (run / "run.json").write_text(json.dumps(info, indent=2))
+                print(f"exposure locked: {locked['ExposureTime'] / 1000:.1f} ms, "
+                      f"gain {locked['AnalogueGain']:.2f}")
+                if locked["AnalogueGain"] > 3.0:
+                    print("warning: gain is high - the board is underlit, scores will suffer. "
+                          "Add light.", file=sys.stderr)
+
             n_pass = 0
             while args.passes == 0 or n_pass < args.passes:
                 n_pass += 1
@@ -324,7 +429,6 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
                 found, overviews = [], []
                 if not wide:
                     progress["stage"] = "overview"
-                    mid = (sum(p for p, _ in corners) / 4, sum(t for _, t in corners) / 4)
                     aim(*mid)
                     frame = camera.grab()
                     overviews.append((frame, View(step, frame.shape[1], frame.shape[0], *pt.position)))
@@ -334,11 +438,20 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
                 for k, pose in enumerate(poses):
                     progress["stage"] = f"{label} {k + 1}/{len(poses)}"
                     still = aim(pose.pan, pose.tilt)
-                    frames = [camera.grab() for _ in range(s.find_frames)]
-                    view = View(step, frames[0].shape[1], frames[0].shape[0], *pt.position)
+                    first = camera.grab()
+                    view = View(step, first.shape[1], first.shape[0], *pt.position)
                     centres = (windows if wide else local_windows)(view, corners, side, stride)
                     t0 = time.time()
-                    probs = score_windows(frames, centres, side, clf.classify)
+                    where = f"{label} {k + 1}/{len(poses)}"
+                    seen = None
+                    if centres:
+                        seen = watch(
+                            camera.grab, lambda f: score_windows([f], centres, side, clf.classify),
+                            target_i, s.find_frames, s.watch_min_s, s.watch_max_s,
+                            rise_level=s.look_threshold / 2, stop_at=threshold,
+                            on_update=lambda p, t: p is not None and show(p, f"{where} watching {t:.1f}s"))
+                    probs = seen.probs if seen else []
+                    frames = seen.frames if seen and seen.frames else [first]
                     for (x, y), p in zip(centres, probs):
                         pan, tilt = view.to_angle(x, y)
                         win_w.writerow([n_pass, k, x, y, f"{pan:.2f}", f"{tilt:.2f}",
@@ -353,15 +466,18 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
                         show(probs[best_i], f"{label} {k + 1}/{len(poses)} (best window)")
                     progress["interest"] = len(pick_candidates(found, 0.5 * square_deg, s.max_candidates))
                     shake = "" if still else "  [still shaking]"
+                    if seen and seen.rising:
+                        shake += "  [still rising when time ran out]"
                     if wide:
-                        print(f"find {k + 1}/{len(poses)}: {len(centres)} windows in "
+                        print(f"find {k + 1}/{len(poses)}: {len(centres)} windows, watched "
                               f"{time.time() - t0:.1f}s, best {s.target} {best:.2f}{shake}")
                         overviews.append((frames[0], view))
                     else:
                         top = CLASS_NAMES[int(np.argmax(probs[best_i]))] if probs else "-"
                         flag = "  <- point of interest" if best >= s.look_threshold else ""
                         print(f"  scan [{k + 1}/{len(poses)}] pan {pose.pan:6.2f} tilt {pose.tilt:6.2f}  "
-                              f"best {s.target} {best:.2f}  (top {top}){shake}{flag}")
+                              f"best {s.target} {best:.2f}  (top {top}, {time.time() - t0:.1f}s)"
+                              f"{shake}{flag}")
 
                 cands = pick_candidates(found, 0.5 * square_deg, s.max_candidates)
                 print(f"\n{len(found)} windows over {s.look_threshold:.2f} -> "
@@ -380,8 +496,10 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
                 for i, c in enumerate(order, 1):
                     c.id = i
                     progress["stage"] = f"revisit {i}/{len(order)}"
-                    _confirm(c, aim, camera, pt, step, corners, side, clf.classify, s, target_i)
-                    show(np.asarray(c.probs), f"revisit {i}/{len(order)}")
+                    where = f"revisit {i}/{len(order)}"
+                    _confirm(c, aim, camera, pt, step, corners, side, clf.classify, s, target_i,
+                             threshold, lambda p, t, w=where: show(p, f"{w} watching {t:.1f}s"))
+                    show(np.asarray(c.probs), where)
                     action = "near-miss"
                     if c.confirm_p >= threshold:
                         now = time.monotonic()
@@ -400,14 +518,14 @@ def run_hunt(args, cfg: Config, corners: list[Corner], crop: float, threshold: f
                             action = "saved"
                     c.action = action
                     cand_w.writerow([n_pass, c.id, f"{c.pan:.2f}", f"{c.tilt:.2f}", f"{c.find_p:.4f}",
-                                     f"{c.confirm_p:.4f}", c.moves, action, c.photo,
+                                     f"{c.confirm_p:.4f}", c.moves, f"{c.watched_s:.1f}", action, c.photo,
                                      *[f"{v:.4f}" for v in c.probs]])
                     cand_log.flush()
                     note = {"saved": f"  -> PHOTO {c.photo}", "near-miss": "  (near miss, logged)",
                             "near": "  (already photographed nearby)", "wait": "  (cooldown)",
                             "cap": "  (photo limit reached)"}.get(action, "")
                     print(f"  [{i}/{len(order)}] pan {c.pan:6.2f} tilt {c.tilt:6.2f}  "
-                          f"find {c.find_p:.2f} -> {c.confirm_p:.2f}{note}")
+                          f"find {c.find_p:.2f} -> {c.confirm_p:.2f}  ({c.watched_s:.1f}s){note}")
                     c.frame = None  # don't hold every frame in memory
 
                 for k, (frame, view) in enumerate(overviews):
@@ -456,15 +574,23 @@ def _refine(frames, view, corners, side, classify, target_i, x0, y0):
     return best, scores[best]
 
 
-def _confirm(c: Candidate, aim, camera, pt, step, corners, side, classify, s, target_i):
-    """Aim at the candidate, find the best square around it, re-aim if it is far off."""
+def _confirm(c: Candidate, aim, camera, pt, step, corners, side, classify, s, target_i,
+             threshold: float = 1.0, on_update=None):
+    """Aim at the candidate, watch it settle, find the best square around it, re-aim if far off."""
     pan, tilt = c.pan, c.tilt
     for attempt in range(s.refine_steps + 1):
         aim(pan, tilt)
-        frames = [camera.grab() for _ in range(s.confirm_frames)]
-        fh, fw = frames[0].shape[:2]
+        first = camera.grab()
+        fh, fw = first.shape[:2]
         view = View(step, fw, fh, *pt.position)
         cx, cy = int(view.cx), int(view.cy)
+        # A revisit always deserves a proper look: rise_level 1 keeps it watching
+        # until the score stops improving (or reaches the photo threshold).
+        seen = watch(camera.grab, lambda f: score_windows([f], [(cx, cy)], side, classify),
+                     target_i, s.confirm_frames, s.watch_min_s, s.revisit_watch_max_s,
+                     rise_level=1.0, stop_at=threshold, on_update=on_update)
+        frames = seen.frames or [first]
+        c.watched_s += seen.seconds
         (bx, by), probs = _refine(frames, view, corners, side, classify, target_i, cx, cy)
         c.confirm_p, c.frame, c.xy = float(probs[target_i]), frames[-1], (bx, by)
         c.probs = [float(v) for v in probs]

@@ -66,10 +66,13 @@ target         = "crater" # class that triggers a photo
 threshold      = 0.6      # its probability needed for a photo (--threshold)
 look_threshold = 0.15     # find stage: go back to any spot this sure (the board's background is ~0.00-0.04)
 find_stride    = 0.33     # find stage: windows step a third of a square, so a crater is centred in one
-find_frames    = 5        # find stage: frames averaged per window (more = sits longer, steadier scores)
-confirm_frames = 10       # confirm stage: frames averaged per square (more = sits longer at each spot)
+find_frames    = 5        # scan: score = average of the last 5 frames (one lucky frame can't pass)
+confirm_frames = 10       # revisit: score = average of the last 10 frames
 refine_steps   = 2        # confirm stage: times it may re-aim towards a better nudged square
 max_candidates = 40       # spots checked per pass, strongest first
+watch_min_s    = 0.8      # classify at least this long at every stop and revisit
+watch_max_s    = 3.0      # at a scan stop, keep watching up to this long while the crater score climbs
+revisit_watch_max_s = 4.0 # same when going back to a point of interest
 cooldown_tiles = 0.5      # no photo within half a square of one already taken (stops repeats on later passes)
 cooldown_s     = 0.0      # minimum seconds between photos (0 = off; squares don't overlap anyway)
 max_photos     = 100      # hard cap per run (0 = no limit)

@@ -116,6 +116,9 @@ class SweepConfig:
     confirm_frames: int = 10      # confirm stage: frames averaged per square
     refine_steps: int = 2         # confirm stage: re-aims towards a better nudged square
     max_candidates: int = 40      # spots checked per pass, strongest first
+    watch_min_s: float = 0.8      # always classify this long at each stop/revisit
+    watch_max_s: float = 3.0      # at a scan stop, keep watching this long while the score climbs
+    revisit_watch_max_s: float = 4.0  # same for a revisit
     cooldown_tiles: float = 0.5   # no new photo within this many crop widths of a saved one
     cooldown_s: float = 0.0       # and at least this long between any two photos
     max_photos: int = 100         # stop saving after this many per run (0 = no limit)
@@ -137,6 +140,8 @@ class SweepConfig:
             raise ValueError("look_threshold must be in [0, 1]")
         if not 0 < self.find_stride <= 1:
             raise ValueError("find_stride must be in (0, 1]")
+        if not 0 <= self.watch_min_s <= min(self.watch_max_s, self.revisit_watch_max_s):
+            raise ValueError("need 0 <= watch_min_s <= watch_max_s and revisit_watch_max_s")
         if min(self.find_frames, self.confirm_frames) < 1 or self.refine_steps < 0:
             raise ValueError("find_frames/confirm_frames must be >= 1, refine_steps >= 0")
         if self.speed_dps <= 0:
