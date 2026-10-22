@@ -70,8 +70,13 @@ class PanTilt:
         tilt: float | None = None,
         speed_dps: float | None = None,
         settle: bool = False,
+        ease: bool = False,
     ):
-        """Move smoothly to (pan, tilt). Either axis can be left as None."""
+        """Move smoothly to (pan, tilt). Either axis can be left as None.
+
+        ease=True speeds up and slows down gently instead of stopping dead, so
+        the bracket rings less and settles sooner.
+        """
         m = self.config.motion
         speed = speed_dps or m.speed_dps
 
@@ -93,6 +98,8 @@ class PanTilt:
         delay = m.step_deg / speed
         for i in range(1, n + 1):
             f = i / n
+            if ease:
+                f = f * f * (3 - 2 * f)  # smoothstep
             if dp:
                 self.pan.set(p0 + dp * f)
             if dt:

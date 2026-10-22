@@ -14,6 +14,7 @@ from pathlib import Path
 from .config import load_config
 from .controller import PanTilt
 from .scan import raster
+from .board_scan import cmd_board_scan, cmd_teach
 from .survey import cmd_measure_k, cmd_survey
 
 
@@ -222,36 +223,19 @@ class _Camera:
             self.picam2.close()
 
 
-def cmd_live(args, cfg) -> int:
-    """Real-time landmark classification on the Hailo-8, with pan-tilt control."""
-    from .classify import HailoClassifier, LiveClassifier, preprocess
+def _thumb_source(cam_ref: dict, crop: float):
+    """Returns thumb(): JPEG of the exact array handed to the Hailo, at most 4 per second.
 
-    m = cfg.model
-    hef = Path(args.hef or m.hef_path)
-    if not hef.exists():
-        print(f"model not found: {hef}\nCopy mars_model_float32.hef from mars-landmark-classification "
-              f"(hailo-inference branch) to {m.hef_path}, or pass --hef PATH.", file=sys.stderr)
-        return 1
-    try:
-        import picamera2  # noqa: F401
-        import hailo_platform  # noqa: F401
-    except ImportError as e:
-        print(f"{e.name} not found. Install with `sudo apt install python3-picamera2 python3-hailort` "
-              "and create the venv with --system-site-packages.", file=sys.stderr)
-        return 1
+    Cached behind a lock so a browser polling the endpoint cannot stack up
+    camera grabs on the capture loop. cam_ref["camera"] is filled in once the
+    camera is open.
+    """
+    from .classify import preprocess
 
-    crop = args.crop if args.crop is not None else m.crop
-    pt_ref: dict = {}
-    cam_ref: dict = {}
     _thumb_cache: dict = {"at": 0.0, "jpg": None}
     _thumb_lock = threading.Lock()
 
     def thumb():
-        """JPEG of the exact array handed to the Hailo, at most 4 per second.
-
-        Cached behind a lock so a browser polling the endpoint cannot stack up
-        camera grabs on the capture loop.
-        """
         import io
 
         now = time.time()
@@ -274,6 +258,32 @@ def cmd_live(args, cfg) -> int:
                 _thumb_cache["jpg"] = None
             _thumb_cache["at"] = time.time()
             return _thumb_cache["jpg"]
+
+    return thumb
+
+
+def cmd_live(args, cfg) -> int:
+    """Real-time landmark classification on the Hailo-8, with pan-tilt control."""
+    from .classify import HailoClassifier, LiveClassifier
+
+    m = cfg.model
+    hef = Path(args.hef or m.hef_path)
+    if not hef.exists():
+        print(f"model not found: {hef}\nCopy mars_model_float32.hef from mars-landmark-classification "
+              f"(hailo-inference branch) to {m.hef_path}, or pass --hef PATH.", file=sys.stderr)
+        return 1
+    try:
+        import picamera2  # noqa: F401
+        import hailo_platform  # noqa: F401
+    except ImportError as e:
+        print(f"{e.name} not found. Install with `sudo apt install python3-picamera2 python3-hailort` "
+              "and create the venv with --system-site-packages.", file=sys.stderr)
+        return 1
+
+    crop = args.crop if args.crop is not None else m.crop
+    pt_ref: dict = {}
+    cam_ref: dict = {}
+    thumb = _thumb_source(cam_ref, crop)
 
     def status():
         d = dict(live.status()) if live else {}
@@ -502,6 +512,29 @@ def build_parser() -> argparse.ArgumentParser:
     sv.add_argument("--hef", help="model override (default: [model] hef_path)")
     sv.add_argument("--out", metavar="DIR", help="run directory (default: data/runs/<timestamp>)")
     sv.set_defaults(func=cmd_survey)
+
+    te = sub.add_parser("teach", help="aim at the 4 board corners and save them for board-scan")
+    te.add_argument("--crop", type=float, help="red box size in the live view (default: [model] crop)")
+    te.add_argument("--file", help="where to save (default: [sweep] corners_file)")
+    te.set_defaults(func=cmd_teach)
+
+    bs = sub.add_parser("board-scan", help="stop-and-go scan of the taught board, photographing craters")
+    bs.add_argument("--crop", type=float, help="fraction of the frame to classify (default: [model] crop)")
+    bs.add_argument("--threshold", type=float, help="target probability that triggers a photo (default: [sweep] threshold)")
+    bs.add_argument("--cooldown-tiles", type=float, help="no photo within this many crop widths of a saved one")
+    bs.add_argument("--cooldown-s", type=float, help="minimum seconds between photos")
+    bs.add_argument("--max-photos", type=int, help="stop saving after this many (0 = no limit)")
+    bs.add_argument("--speed", type=float, help="degrees per second between poses (default: [sweep] speed_dps)")
+    bs.add_argument("--passes", type=int, default=1, help="times over the board (0 = until Ctrl+C)")
+    bs.add_argument("--one-way", action="store_true", help="every row left to right instead of serpentine")
+    bs.add_argument("--dry-run", action="store_true", help="print the grid, move nothing")
+    bs.add_argument("--trace", action="store_true", help="visit the outer grid points to check the crop stays on the board")
+    bs.add_argument("--corners", help="corners file (default: [sweep] corners_file)")
+    bs.add_argument("--hef", help="model override (default: [model] hef_path)")
+    bs.add_argument("--out", metavar="DIR", help="run directory (default: data/runs/board-<timestamp>)")
+    bs.add_argument("--no-preview", action="store_true", help="don't serve the browser live view")
+    bs.add_argument("--port", type=int, help="live view port (default: preview_port)")
+    bs.set_defaults(func=cmd_board_scan)
 
     lv = sub.add_parser("live", help="real-time landmark classification on the Hailo-8")
     lv.add_argument("--hef", help="compiled model (default: [model] hef_path in config.toml)")

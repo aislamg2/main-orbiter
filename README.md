@@ -169,6 +169,72 @@ Use the HEF rebuilt with the real-image calibration set (`make_calib_set.py` +
 `mars_landmark.alls`). The older HEF expects a different input range and will
 give wrong labels.
 
+## Scanning the board for craters (`teach` + `board-scan`)
+
+This does what `pantilt live --crop 0.2 --log ...` does, but the camera walks
+itself over the board. It stops at each grid point, waits until the picture is
+sharp, and saves a photo when it sees a crater.
+
+**1. Teach the board's corners (once, and again if the camera or board moves).**
+
+```bash
+pantilt teach --crop 0.2
+```
+
+Open the live view, then use the arrow keys to put the green crosshair on each
+corner of the printed map. Go around the edge in order: any start corner, either
+direction. Press **m** at each corner, **g** to re-visit them, **u** to undo,
+and **s** to save to `data/board_corners.json`. The scan never leaves this shape,
+so nothing off the board gets photographed.
+
+**2. Check the plan, then check it on the hardware.**
+
+```bash
+pantilt board-scan --crop 0.2 --dry-run   # grid size and angles, moves nothing
+pantilt board-scan --crop 0.2 --trace     # visits the 4 outermost grid points
+```
+
+During `--trace`, watch the red box in the live view. It should reach the board
+edge but never hang off it.
+
+**3. Scan.**
+
+```bash
+pantilt board-scan --crop 0.2                       # one pass, threshold from config.toml
+pantilt board-scan --crop 0.2 --threshold 0.75      # stricter
+pantilt board-scan --crop 0.2 --passes 0            # keep going until Ctrl+C
+```
+
+Each run writes to `data/runs/board-<timestamp>/`:
+
+- `photos/`: the full frame (`.jpg`) plus the exact crop the model judged
+  (`_crop.png`), named by pose and confidence
+- `poses.csv`: every pose with all 8 probabilities and what happened there
+  (`saved`, `below`, `near`, `wait`, `cap`), so you can pick a better threshold
+  afterwards without re-scanning
+- `run.json`: the settings used for the run
+
+How it avoids blur and duplicate photos (all set in `[sweep]` in `config.toml`):
+
+| Setting | What it does |
+|---|---|
+| `speed_dps`, `settle_s` | Moves at 30°/s with eased starts and stops, then always waits 0.4 s |
+| `settle_max_s`, `still_diff` | Then keeps waiting until two frames in a row look the same (up to 2 s). `still` = 0 in the CSV means it gave up |
+| `threshold` | Crater probability needed for a photo (`--threshold`) |
+| `cooldown_tiles` | No new photo within 1.2 crop widths of one already saved, so the same crater seen from the next grid point isn't saved again |
+| `cooldown_s` | And at least 3 s between any two photos |
+| `max_photos` | Hard cap per run |
+| `overlap` | How much neighbouring crop squares share (raise it if craters fall between them) |
+| `hfov_deg` | Lens field of view, used to space the grid to match `--crop` |
+
+If the CSV shows a lot of `still = 0`, slow down (`speed_dps`) or raise
+`settle_max_s`. If a still bracket never counts as still (each pose takes the
+full `settle_max_s`), raise `still_diff`.
+
+Photos are saved at the preview resolution (`preview_width` x `preview_height`).
+At `--crop 0.2` the crop is only 144 px square, so raise the preview size if you
+want sharper saved crops.
+
 ## Configuration
 
 All settings live in [`config.toml`](config.toml): channels, angle limits, pulse
@@ -214,6 +280,7 @@ pantilt/
   scan.py        raster (serpentine) scan pattern
   stream.py      live camera preview as a web page (MJPEG)
   classify.py    Hailo-8 landmark classifier + live classification loop
+  board_scan.py  `teach` the board corners, `board-scan` it for craters
   cli.py         `pantilt` command line
 config.toml      hardware and model settings
 models/          compiled Hailo model (.hef) for `pantilt live`

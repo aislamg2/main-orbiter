@@ -100,6 +100,36 @@ class BoardConfig:
 
 
 @dataclass
+class SweepConfig:
+    """`pantilt board-scan`: stop-and-go scan inside corners taught with `pantilt teach`."""
+
+    corners_file: str = "data/board_corners.json"
+    hfov_deg: float = 67.0        # horizontal field of view (IMX708 75 deg diagonal lens)
+    overlap: float = 0.25         # fraction of the crop square shared with each neighbour
+    target: str = "crater"        # class that triggers a photo
+    threshold: float = 0.6        # probability of `target` that counts as a detection
+    cooldown_tiles: float = 1.2   # no new photo within this many crop widths of a saved one
+    cooldown_s: float = 3.0       # and at least this long between any two photos
+    max_photos: int = 100         # stop saving after this many per run (0 = no limit)
+    speed_dps: float = 30         # slower than [motion] so the mount shakes less
+    settle_s: float = 0.4         # always wait this long after a move
+    settle_max_s: float = 2.0     # then wait for the image to stop changing, up to this long
+    still_diff: float = 2.0       # mean grey-level change between frames that counts as still (0 = off)
+
+    def __post_init__(self):
+        if not 0 < self.hfov_deg < 180:
+            raise ValueError("hfov_deg must be in (0, 180)")
+        if not 0 <= self.overlap < 1:
+            raise ValueError("overlap must be in [0, 1)")
+        if not 0 <= self.threshold <= 1:
+            raise ValueError("threshold must be in [0, 1]")
+        if self.speed_dps <= 0:
+            raise ValueError("speed_dps must be positive")
+        if self.settle_max_s < self.settle_s:
+            raise ValueError("settle_max_s must be >= settle_s")
+
+
+@dataclass
 class Config:
     driver: DriverConfig = field(default_factory=DriverConfig)
     pan: ServoConfig = field(default_factory=lambda: ServoConfig(channel=1))
@@ -110,6 +140,7 @@ class Config:
     camera: CameraConfig = field(default_factory=CameraConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     board: BoardConfig = field(default_factory=BoardConfig)
+    sweep: SweepConfig = field(default_factory=SweepConfig)
 
 
 _SECTIONS = {
@@ -120,6 +151,7 @@ _SECTIONS = {
     "camera": CameraConfig,
     "model": ModelConfig,
     "board": BoardConfig,
+    "sweep": SweepConfig,
 }
 
 

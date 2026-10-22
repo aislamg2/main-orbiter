@@ -55,3 +55,17 @@ pan_center_deg  = 90.0    # jog to the middle of the board with `pantilt keys`
 tilt_center_deg = 90.0    # and read these off
 pan_sign        = 1.0     # flip to -1.0 if the scan runs the wrong way
 tilt_sign       = 1.0     # with rotate_180 on, expect at least one to be -1.0
+
+[sweep]                   # pantilt teach + pantilt board-scan
+corners_file   = "data/board_corners.json"  # written by `pantilt teach`
+hfov_deg       = 67.0     # Arducam IMX708 75 deg diagonal lens -> ~67 deg across
+overlap        = 0.25     # crop squares share this much with each neighbour
+target         = "crater" # class that triggers a photo
+threshold      = 0.6      # its probability needed for a photo (--threshold)
+cooldown_tiles = 1.2      # no photo within 1.2 crop widths of one already taken
+cooldown_s     = 3.0      # and at least this many seconds between photos
+max_photos     = 100      # hard cap per run (0 = no limit)
+speed_dps      = 30       # move speed between poses - slower shakes less
+settle_s       = 0.4      # always wait this long after each move
+settle_max_s   = 2.0      # then wait until the picture stops changing, up to this long
+still_diff     = 2.0      # how still counts as still (mean grey change; 0 = skip the check)
