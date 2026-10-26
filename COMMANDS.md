@@ -59,7 +59,7 @@ Settings without a flag live under `[sweep]` in `config.toml`:
 
 | What | When | Command |
 |---|---|---|
-| Teach the 4 board corners | The board or camera moved | `pantilt teach` |
+| Teach the 4 board corners | The board or camera moved | `pantilt teach` (add `--gui` for a window) |
 | Measure the servo step and directions | New camera, lens or servos | `pantilt calibrate-step` |
 | Walk every scan stop, no classifying | Check the coverage | `pantilt board-scan --trace` |
 | Visit the 4 outermost stops | Check the box reaches the board edges | `pantilt board-scan --trace-edges` |
@@ -92,6 +92,7 @@ releases the servos, `q` quits.
 | Centre both servos | `pantilt center` |
 | Go to an angle (pan, tilt) | `pantilt goto 100 90` |
 | Drive with the arrow keys (no camera) | `pantilt keys` |
+| Drive with the arrow keys in a window with the live camera | `pantilt keys --gui` (needs `sudo apt install python3-tk`) |
 | Test each servo's full range | `pantilt sweep` (or `--axis pan` / `--axis tilt`) |
 | Release the servos (go limp) | `pantilt off` |
 

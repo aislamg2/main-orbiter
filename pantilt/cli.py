@@ -88,6 +88,10 @@ def cmd_sweep(args, cfg) -> int:
 
 
 def cmd_keys(args, cfg) -> int:
+    if args.gui:
+        from .gui import run_gui
+        return run_gui(cfg, teach=False, crop=cfg.model.crop, corners_file=cfg.sweep.corners_file, step=args.step)
+
     import curses
 
     def loop(scr):
@@ -487,6 +491,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     k = sub.add_parser("keys", help="drive the camera with the arrow keys")
     k.add_argument("--step", type=int, default=2, help="degrees per key press (default 2)")
+    k.add_argument("--gui", action="store_true", help="open a window with the live camera instead of the terminal screen")
     k.set_defaults(func=cmd_keys)
 
     sc = sub.add_parser("scan", help="raster-scan a grid of poses, optionally capturing photos")
@@ -517,6 +522,7 @@ def build_parser() -> argparse.ArgumentParser:
     te = sub.add_parser("teach", help="aim at the 4 board corners and save them for board-scan")
     te.add_argument("--crop", type=float, help="red box size in the live view (default: [model] crop)")
     te.add_argument("--file", help="where to save (default: [sweep] corners_file)")
+    te.add_argument("--gui", action="store_true", help="open a window with the live camera instead of the terminal screen")
     te.set_defaults(func=cmd_teach)
 
     cs = sub.add_parser("calibrate-step", help="measure the servo step that moves the image one crop square")

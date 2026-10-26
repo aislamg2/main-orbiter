@@ -215,6 +215,7 @@ pantilt/
   stream.py      live camera preview as a web page (MJPEG)
   classify.py    Hailo-8 landmark classifier + live classification loop
   cli.py         `pantilt` command line
+  gui.py         gui altnerative to CLI
 config.toml      hardware and model settings
 models/          compiled Hailo model (.hef) for `pantilt live`
 find_bounds.py   free arrow-key control with live angles (no limits)

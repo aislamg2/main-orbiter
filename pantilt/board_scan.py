@@ -330,6 +330,11 @@ def cmd_teach(args, cfg: Config) -> int:
 
     corners_file = Path(args.file or cfg.sweep.corners_file)
     crop = args.crop if args.crop is not None else cfg.model.crop
+
+    if getattr(args, "gui", False):
+        from .gui import run_gui
+        return run_gui(cfg, teach=True, crop=crop, corners_file=corners_file)
+
     corners: list[Corner] = []
     state = {"step_i": STEPS.index(2), "msg": "", "saved": False}
     pt_ref: dict = {}
