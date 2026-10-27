@@ -1,13 +1,15 @@
 """Gui for aiming the camera and teaching the board corners.
 
 `pantilt keys --gui` and `pantilt teach --gui` opens a gui instead of the curses
-screen. It has to run where the camera is (the pi or through ssh with X forwarding).
+screen, and `pantilt live --gui` adds the live classification to it. It has to
+run where the camera is (the pi or through ssh with X forwarding).
 """
 
 from __future__ import annotations
 
 import threading
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 from .board_scan import STEPS, Corner, save_corners
@@ -107,7 +109,12 @@ class AimSession:
 
 
 def run_gui(cfg: Config, *, teach: bool, crop: float, corners_file: str | Path,
-            step: float = 2) -> int:
+            step: float = 2, pt=None, camera=None, extra=None, on_tick=None,
+            title: str | None = None) -> int:
+    """Open the window. Pass pt / camera to reuse ones the caller already has open
+    (`pantilt live` does, so the classifier keeps reading the same camera).
+    extra() returns more text for the readout; on_tick() runs with every frame.
+    """
     try:
         import tkinter as tk
     except ImportError:
@@ -124,19 +131,21 @@ def run_gui(cfg: Config, *, teach: bool, crop: float, corners_file: str | Path,
     except tk.TclError as e:
         print(f"can't open a window ({e}). On the Pi, use its own monitor, or ssh -X on a remote machine.")
         return 1
-    root.title("Teach the board corners" if teach else "Pan-tilt control")
-    try:
-        camera = _Camera(cfg, preview=False, port=None, status=None)
-    except Exception as e:
-        root.destroy()
-        print(f"Couldn't start the camera: {e}")
-        return 1
+    root.title(title or ("Teach the board corners" if teach else "Pan-tilt control"))
+    own_camera = camera is None
+    if own_camera:
+        try:
+            camera = _Camera(cfg, preview=False, port=None, status=None)
+        except Exception as e:
+            root.destroy()
+            print(f"Couldn't start the camera: {e}")
+            return 1
 
     cw = 960
     ch = round(cw * cfg.camera.preview_height / cfg.camera.preview_width)
     box = crop * ch  # the red box is a square, crop x the frame height
 
-    with PanTilt(cfg) as pt:
+    with (PanTilt(cfg) if pt is None else nullcontext(pt)) as pt:
         pt.center(smooth=False)
         session = AimSession(pt, teach, corners_file, step)
 
@@ -152,7 +161,8 @@ def run_gui(cfg: Config, *, teach: bool, crop: float, corners_file: str | Path,
 
         side = tk.Frame(root, padx=10, pady=10)
         side.grid(row=0, column=1, sticky="n")
-        readout = tk.Label(side, justify="left", anchor="nw", font=("Menlo", 12), width=34, height=14)
+        readout = tk.Label(side, justify="left", anchor="nw", font=("Menlo", 12), width=34,
+                           height=24 if extra else 14)
         readout.pack(anchor="w")
 
         def save():
@@ -202,14 +212,28 @@ def run_gui(cfg: Config, *, teach: bool, crop: float, corners_file: str | Path,
                 canvas.itemconfig(picture, image=canvas.photo)
             except Exception as e:
                 session.msg = f"camera: {e}"
-            readout.config(text=session.status_text())
+            text = session.status_text()
+            try:
+                if on_tick:
+                    on_tick()
+                if extra:
+                    text = f"{extra()}\n\n{text}"
+            except Exception as e:  # e.g. the classifier thread died: stop, report it below
+                failure.append(e)
+                root.destroy()
+                return
+            readout.config(text=text)
             root.after(40, tick)
 
+        failure: list = []
         tick()
         try:
             root.mainloop()
         finally:
-            camera.close()
+            if own_camera:
+                camera.close()
+        if failure:
+            raise failure[0]
         if teach:
             pt.center()
 

@@ -75,6 +75,7 @@ properly if the outline reaches them.
 | What | Command |
 |---|---|
 | Live classification, aim with the arrow keys | `pantilt live` |
+| Live classification in a window: camera, red box, class and confidence, buttons | `pantilt live --gui` (needs `sudo apt install python3-tk` and a screen) |
 | Live, at a different crop | `pantilt live --crop 0.3` |
 | Live, logging predictions to a CSV | `pantilt live --log data/live.csv` |
 | Live, no keyboard, print one prediction per second | `pantilt live --no-keys` |
@@ -82,7 +83,9 @@ properly if the outline reaches them.
 | Free movement past the angle limits, showing angles | `python3 find_bounds.py --preview` |
 
 In `live`: the arrow keys aim, `+`/`-` change the step, `c` centres, `r`
-releases the servos, `q` quits.
+releases the servos, `q` quits. With `--gui` the same keys work in the window,
+and each one also has a button. `--log`, `--crop` and `--step` work as usual,
+and the browser live view runs alongside unless you add `--no-preview`.
 
 ## Servos and hardware
 

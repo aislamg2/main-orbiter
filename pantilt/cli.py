@@ -337,6 +337,8 @@ def cmd_live(args, cfg) -> int:
                     _live_scan(args, cfg, pt, live, record)
                 elif args.no_keys:
                     _live_print(live, record, m.log_every_s)
+                elif args.gui:
+                    _live_gui(args, cfg, pt, camera, live, record, m.log_every_s, crop)
                 else:
                     _live_keys(args, cfg, pt, live, record, m.log_every_s, camera.url)
             finally:
@@ -398,6 +400,35 @@ def _live_scan(args, cfg, pt, live, record):
         top = ", ".join(f"{n} {v * 100:.0f}%" for n, v in p.top3)
         print(f"[{i + 1}/{len(poses)}] pan={pan:.1f} tilt={tilt:.1f} -> {top}")
     pt.center()
+
+
+def _live_text(live, url) -> str:
+    """The classification part of the --gui readout (the terminal screen shows the same)."""
+    p = live.latest
+    return "\n".join([
+        f"class = {p.label}  {p.confidence * 100:5.1f}%",
+        *[f"   {n:<14} {v * 100:5.1f}%" for n, v in p.top3[1:]],
+        f"fps   = {p.fps:5.1f}   hailo = {p.infer_ms:4.1f} ms",
+        f"view: {url}" if url else "",
+    ])
+
+
+def _live_gui(args, cfg, pt, camera, live, record, every, crop):
+    """`live --gui`: the aiming window, with the live classification in its readout."""
+    from .gui import run_gui
+
+    last = {"log": 0.0}
+
+    def on_tick():
+        _check(live)  # a dead classifier closes the window and is reported
+        now = time.time()
+        if now - last["log"] >= every:
+            record()
+            last["log"] = now
+
+    run_gui(cfg, teach=False, crop=crop, corners_file=cfg.sweep.corners_file, step=args.step,
+            pt=pt, camera=camera, extra=lambda: _live_text(live, camera.url), on_tick=on_tick,
+            title="Live landmark classification")
 
 
 def _live_keys(args, cfg, pt, live, record, every, url):
@@ -572,6 +603,7 @@ def build_parser() -> argparse.ArgumentParser:
     lv.add_argument("--no-preview", action="store_true", help="don't serve the browser live view")
     lv.add_argument("--port", type=int, help="live view port (default: preview_port)")
     lv.add_argument("--no-keys", action="store_true", help="no keyboard control; print predictions")
+    lv.add_argument("--gui", action="store_true", help="aim and watch the classification in a window instead of the terminal screen")
     lv.add_argument("--step", type=int, default=2, help="degrees per key press (default 2)")
     lv.add_argument("--scan", action="store_true", help="raster-scan and classify at each pose")
     lv.add_argument("--pan", nargs=2, type=float, metavar=("MIN", "MAX"), help="scan pan range")

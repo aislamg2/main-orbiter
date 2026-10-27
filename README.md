@@ -395,6 +395,7 @@ pantilt/
   hunt.py        `board-scan`: scan the board, go back to likely craters, photograph
   clean.py       `clean`: delete saved photos from data/runs
   cli.py         `pantilt` command line
+  gui.py         `--gui` window for `keys`, `teach` and `live` (tkinter)
 config.toml      hardware and model settings
 models/          compiled Hailo model (.hef) for `pantilt live`
 find_bounds.py   free arrow-key control with live angles (no limits)
